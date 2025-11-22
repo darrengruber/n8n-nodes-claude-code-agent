@@ -16,7 +16,7 @@ export class ClaudeCodeAgent implements INodeType {
     description: INodeTypeDescription = {
         displayName: 'Claude Code Agent',
         name: 'claudeCodeAgent',
-        icon: 'file:claude.svg',
+        icon: 'file:claudeCodeAgent.svg',
         group: ['transform'],
         version: 1,
         description: 'Use the Claude Code SDK to run an AI agent',
