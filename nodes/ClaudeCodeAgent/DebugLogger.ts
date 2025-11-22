@@ -8,8 +8,9 @@ export class DebugLogger {
 
     constructor(enabled: boolean = false) {
         this.enabled = enabled;
-        // Use absolute path specified by user
-        this.logDir = '/Users/darren/repos/n8n-nodes-claude-code-antigravity/logs';
+        // Use logs directory in current working directory or temp directory
+        const cwd = process.cwd();
+        this.logDir = path.join(cwd, 'logs');
 
         if (this.enabled) {
             // Create debug directory if it doesn't exist

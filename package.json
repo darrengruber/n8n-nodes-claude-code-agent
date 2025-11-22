@@ -1,7 +1,7 @@
 {
-    "name": "n8n-nodes-claude-code",
+    "name": "n8n-nodes-claude-code-agent",
     "version": "0.1.0",
-    "description": "",
+    "description": "n8n node for Claude Code Agent - Execute Claude commands and workflows with enhanced MCP tool support",
     "license": "MIT",
     "homepage": "",
     "keywords": [
@@ -13,7 +13,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/<...>/n8n-nodes-<...>.git"
+        "url": "https://github.com/darrengruber/n8n-nodes-claude-code.git"
     },
     "scripts": {
         "build": "n8n-node build",
@@ -21,8 +21,7 @@
         "dev": "n8n-node dev",
         "lint": "n8n-node lint",
         "lint:fix": "n8n-node lint --fix",
-        "release": "n8n-node release",
-        "prepublishOnly": "n8n-node prerelease"
+        "release": "n8n-node release"
     },
     "files": [
         "dist"
@@ -47,6 +46,7 @@
         "n8n-workflow": "*"
     },
     "dependencies": {
-        "@anthropic-ai/claude-agent-sdk": "^0.1.50"
+        "@anthropic-ai/claude-agent-sdk": "^0.1.50",
+        "n8n-nodes-claude-code-agent": "^0.1.0"
     }
 }

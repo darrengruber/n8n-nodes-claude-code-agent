@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Development files
+.vscode/
+.github/
+logs/
+temp/
+tmp/
+
+# Source files (only dist is included in package.json)
+nodes/
+tsconfig.json
+*.ts
+*.tsbuildinfo
+
+# Configuration files
+eslint.config.mjs
+.prettierrc.js
+.gitignore
+
+# Lock files
+package-lock.json
+.npmrc
+.env
+
+# OS files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Debug files
+*.log
+debug/
+
+# Test files
+test/
+tests/
+**/*.test.js
+**/*.spec.js

@@ -14,7 +14,7 @@ This n8n node integrates the Claude Code Agent SDK (`@anthropic-ai/claude-agent-
 ## Installation
 
 ```bash
-npm install n8n-nodes-claude-code-antigravity
+npm install n8n-nodes-claude-code-agent
 ```
 
 ## Configuration
