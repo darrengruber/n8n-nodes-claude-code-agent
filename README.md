@@ -1,46 +1,81 @@
-# n8n-nodes-claude-code
+# Claude Code Agent - n8n Node
 
-This is an n8n community node. It lets you use _app/service name_ in your n8n workflows.
+This n8n node integrates the Claude Code Agent SDK (`@anthropic-ai/claude-agent-sdk`), enabling powerful agentic AI workflows with tool support and memory.
 
-_App/service name_ is _one or two sentences describing the service this node integrates with_.
+## Features
 
-[n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/sustainable-use-license/) workflow automation platform.
-
-[Installation](#installation)
-[Operations](#operations)
-[Credentials](#credentials)
-[Compatibility](#compatibility)
-[Usage](#usage)
-[Resources](#resources)
-[Version history](#version-history)
+- **Claude Code SDK Integration**: Uses the official Anthropic Claude Code SDK
+- **Dynamic Model Loading**: Fetches available models from your Anthropic API endpoint
+- **Memory Support**: Optional AI Memory input for conversational context
+- **Tool Support**: Connect n8n AI Tools via dedicated MCP adapter
+- **Verbose Logging**: Optional file-based debug logging to `claude-agent-debug/` directory
+- **Custom Endpoints**: Supports custom Anthropic API base URLs
 
 ## Installation
 
+```bash
+npm install n8n-nodes-claude-code-antigravity
+```
+
+## Configuration
 Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes/installation/) in the n8n community nodes documentation.
-
-## Operations
-
-_List the operations supported by your node._
 
 ## Credentials
 
-_If users need to authenticate with the app/service, provide details here. You should include prerequisites (such as signing up with the service), available authentication methods, and how to set them up._
+This node requires **Anthropic API** credentials. You can:
+1. Create credentials in n8n's credential manager
+2. Enter your Anthropic API key
+3. Optionally set a custom base URL for Anthropic-compatible endpoints
 
-## Compatibility
-
-_State the minimum n8n version, as well as which versions you test against. You can also include any known version incompatibility issues._
+The credentials support custom base URLs via the `ANTHROPIC_BASE_URL` environment variable.
 
 ## Usage
 
-_This is an optional section. Use it to help users with any difficult or confusing aspects of the node._
+### Basic Setup
+1. Add the **Claude Code Agent** node to your workflow
+2. Connect **Anthropic API** credentials
+3. Enter your prompt in the **Text** field
+4. Select your desired **Model**
 
-_By the time users are looking for community nodes, they probably already know n8n basics. But if you expect new users, you can link to the [Try it out](https://docs.n8n.io/try-it-out/) documentation to help them get started._
+### With Tools
+1. Connect **AI Tool** nodes (e.g., Calculator, HTTP Request, Custom Tools)
+2. The agent will automatically detect and use tools when needed
+3. Tools are exposed via MCP protocol to Claude
+
+### With Memory
+1. Connect an **AI Memory** node (e.g., Window Buffer Memory, Chat Memory)
+2. The agent will include conversation history in its context
+3. History is formatted as User/Assistant message pairs
+
+### Advanced Options
+- **System Message**: Provide custom instructions for the agent
+- **Max Turns**: Limit agent iterations (default: unlimited)
+- **Verbose**: Enable detailed console and file logging
+
+## Debug Logging
+
+When verbose mode is enabled, detailed logs are written to `/logs/debug-<timestamp>.log`:
+- Configuration and parameters
+- Tool schema extraction details
+- MCP server status
+- Complete SDK message stream
+- Tool invocation traces with arguments and results
+- Error details and stack traces
+
+Check the logs directory after execution for troubleshooting and monitoring.
+
+## Compatibility
+
+- n8n version: 1.0.0+
+- Requires `@anthropic-ai/claude-agent-sdk` package
+- Compatible with n8n AI tools and LangChain tools
 
 ## Resources
 
-* [n8n community nodes documentation](https://docs.n8n.io/integrations/#community-nodes)
-* _Link to app/service documentation._
+- [n8n community nodes documentation](https://docs.n8n.io/integrations/community-nodes/)
+- [Claude Code SDK Documentation](https://github.com/anthropics/claude-code-sdk)
+- [Anthropic API Documentation](https://docs.anthropic.com/)
 
-## Version history
+## License
 
-_This is another optional section. If your node has multiple versions, include a short description of available versions and what changed, as well as any compatibility impact._
+[MIT](LICENSE.md)
