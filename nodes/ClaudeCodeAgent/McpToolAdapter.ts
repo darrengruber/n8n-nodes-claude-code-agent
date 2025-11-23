@@ -1,4 +1,4 @@
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { DebugLogger } from './DebugLogger';
 
@@ -49,6 +49,138 @@ function getActiveExtractors(): SchemaExtractor[] {
         }
         return true;
     });
+}
+
+export async function processToolsForAgent(
+    tools: any[],
+    options: { verbose: boolean },
+    logger: DebugLogger
+): Promise<{ mcpServers: Record<string, any>; disallowedTools: string[] }> {
+    const mcpServers: Record<string, any> = {};
+    let toolsCount = 0;
+
+    if (tools && tools.length > 0) {
+        toolsCount = tools.length;
+        logger.log(`Found ${toolsCount} tools`, tools.map((t: any) => ({
+            name: t.name,
+            description: t.description,
+            source: t.metadata?.sourceNodeName
+        })));
+
+        // Group tools by source node to create distinct MCP servers
+        const toolsBySource: Record<string, any[]> = {};
+
+        for (const tool of tools) {
+            // Use sourceNodeName as the grouping key, fallback to 'n8n-tools'
+            // For MCP Client tools, this will group them by the client node name
+            const sourceName = tool.metadata?.sourceNodeName || 'n8n-tools';
+            if (!toolsBySource[sourceName]) {
+                toolsBySource[sourceName] = [];
+            }
+            toolsBySource[sourceName].push(tool);
+        }
+
+        logger.log('Grouped tools by source:', Object.keys(toolsBySource));
+
+        // Check for HTTP Request node globally to determine if we should allow curl/wget
+        const hasHttpRequestNode = tools.some(t => {
+            const nodeType = t.metadata?.nodeType || t.nodeType;
+            return nodeType && (
+                nodeType.toLowerCase().includes('httprequest') ||
+                t.name.toLowerCase().includes('http_request')
+            );
+        });
+
+        logger.log(`Global check: HTTP Request node ${hasHttpRequestNode ? 'FOUND' : 'NOT FOUND'}`);
+
+        // Create an MCP server for each group
+        for (const [sourceName, sourceTools] of Object.entries(toolsBySource)) {
+            const sdkTools = await adaptToMcpTools(sourceTools, options.verbose, logger);
+
+            // Sanitize server name (alphanumeric and underscores only)
+            // e.g. "My MCP Client" -> "My_MCP_Client"
+            const serverName = sourceName.replace(/[^a-zA-Z0-9_]/g, '_');
+
+            // Check if this group contains an "Execute Command" node
+            const isExecuteCommand = sourceTools.some(t => {
+                const nodeType = t.metadata?.nodeType || t.nodeType;
+                return nodeType && (
+                    nodeType.toLowerCase().includes('executecommand') ||
+                    t.name.toLowerCase().includes('execute_command')
+                );
+            });
+
+            // Check if this group contains an "HTTP Request" node
+            const isHttpRequest = sourceTools.some(t => {
+                const nodeType = t.metadata?.nodeType || t.nodeType;
+                return nodeType && (
+                    nodeType.toLowerCase().includes('httprequest') ||
+                    t.name.toLowerCase().includes('http_request')
+                );
+            });
+
+            if (isExecuteCommand) {
+                logger.log(`Found Execute Command node in group ${sourceName}. Renaming tools to 'Bash' to override default.`);
+                sdkTools.forEach(t => {
+                    if (t.name.toLowerCase().includes('execute')) {
+                        t.name = 'Bash';
+                        t.description = 'Execute a bash command on the n8n server. Use this for all shell commands.';
+
+                        // If no HTTP Request node is connected, ban curl/wget
+                        if (!hasHttpRequestNode) {
+                            logger.log('No HTTP Request node connected. Banning curl/wget in Bash tool.');
+                            const originalHandler = t.handler;
+                            t.handler = async (args: any, extra: any) => {
+                                const command = args.command || '';
+                                if (typeof command === 'string') {
+                                    const lowerCmd = command.toLowerCase();
+                                    // Simple check for curl/wget
+                                    if (
+                                        lowerCmd.startsWith('curl ') ||
+                                        lowerCmd.startsWith('wget ') ||
+                                        lowerCmd.includes(' curl ') ||
+                                        lowerCmd.includes(' wget ') ||
+                                        lowerCmd.includes('|curl ') ||
+                                        lowerCmd.includes('|wget ')
+                                    ) {
+                                        throw new Error('Network access via curl/wget is disabled because no HTTP Request node is connected. Please connect an HTTP Request node to enable web fetching.');
+                                    }
+                                }
+                                return originalHandler(args, extra);
+                            };
+                        }
+                    }
+                });
+            }
+
+            if (isHttpRequest) {
+                logger.log(`Found HTTP Request node in group ${sourceName}. Renaming tools to 'WebFetch' to override default.`);
+                sdkTools.forEach(t => {
+                    // Rename the tool to 'WebFetch' so the agent uses it for web requests
+                    if (t.name.toLowerCase().includes('http')) {
+                        t.name = 'WebFetch';
+                        t.description = 'Fetch content from a URL. Use this for all web requests.';
+                    }
+                });
+            }
+
+            logger.log(`Creating MCP server '${serverName}' with ${sdkTools.length} tools`);
+
+            mcpServers[serverName] = createSdkMcpServer({
+                name: serverName,
+                tools: sdkTools,
+            });
+        }
+
+        logger.log('MCP servers created successfully');
+    } else {
+        logger.log('No tools connected');
+    }
+
+    return {
+        mcpServers,
+        disallowedTools: ['Bash', 'WebFetch']
+    };
 }
 
 function extractSchemaShape(tool: any, logger?: DebugLogger): any {
