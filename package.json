@@ -1,6 +1,6 @@
 {
     "name": "n8n-nodes-claude-agent",
-    "version": "0.2.1-dev.0",
+    "version": "0.5.0",
     "type": "commonjs",
     "description": "n8n node for Claude Agent - Execute Claude commands and workflows with enhanced MCP tool support",
     "license": "MIT",
