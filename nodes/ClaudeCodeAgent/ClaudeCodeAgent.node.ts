@@ -270,6 +270,17 @@ export class ClaudeCodeAgent implements INodeType {
 
                         logger.log('Grouped tools by source:', Object.keys(toolsBySource));
 
+                        // Check for HTTP Request node globally to determine if we should allow curl/wget
+                        const hasHttpRequestNode = tools.some(t => {
+                            const nodeType = t.metadata?.nodeType || t.nodeType;
+                            return nodeType && (
+                                nodeType.toLowerCase().includes('httprequest') ||
+                                t.name.toLowerCase().includes('http_request')
+                            );
+                        });
+
+                        logger.log(`Global check: HTTP Request node ${hasHttpRequestNode ? 'FOUND' : 'NOT FOUND'}`);
+
                         // Create an MCP server for each group
                         for (const [sourceName, sourceTools] of Object.entries(toolsBySource)) {
                             const sdkTools = await adaptToMcpTools(sourceTools, options.verbose, logger);
@@ -277,6 +288,71 @@ export class ClaudeCodeAgent implements INodeType {
                             // Sanitize server name (alphanumeric and underscores only)
                             // e.g. "My MCP Client" -> "My_MCP_Client"
                             const serverName = sourceName.replace(/[^a-zA-Z0-9_]/g, '_');
+
+                            // Check if this group contains an "Execute Command" node
+                            const isExecuteCommand = sourceTools.some(t => {
+                                const nodeType = t.metadata?.nodeType || t.nodeType;
+                                return nodeType && (
+                                    nodeType.toLowerCase().includes('executecommand') ||
+                                    t.name.toLowerCase().includes('execute_command')
+                                );
+                            });
+
+                            // Check if this group contains an "HTTP Request" node
+                            const isHttpRequest = sourceTools.some(t => {
+                                const nodeType = t.metadata?.nodeType || t.nodeType;
+                                return nodeType && (
+                                    nodeType.toLowerCase().includes('httprequest') ||
+                                    t.name.toLowerCase().includes('http_request')
+                                );
+                            });
+
+                            if (isExecuteCommand) {
+                                logger.log(`Found Execute Command node in group ${sourceName}. Renaming tools to 'Bash' to override default.`);
+                                sdkTools.forEach(t => {
+                                    if (t.name.toLowerCase().includes('execute')) {
+                                        t.name = 'Bash';
+                                        t.description = 'Execute a bash command on the n8n server. Use this for all shell commands.';
+
+                                        // If no HTTP Request node is connected, ban curl/wget
+                                        if (!hasHttpRequestNode) {
+                                            logger.log('No HTTP Request node connected. Banning curl/wget in Bash tool.');
+                                            const originalHandler = t.handler;
+                                            t.handler = async (args: any, extra: any) => {
+                                                const command = args.command || '';
+                                                if (typeof command === 'string') {
+                                                    const lowerCmd = command.toLowerCase();
+                                                    // Simple check for curl/wget
+                                                    // We check if it starts with the command or contains it preceded by a separator
+                                                    // This is a basic heuristic.
+                                                    if (
+                                                        lowerCmd.startsWith('curl ') ||
+                                                        lowerCmd.startsWith('wget ') ||
+                                                        lowerCmd.includes(' curl ') ||
+                                                        lowerCmd.includes(' wget ') ||
+                                                        lowerCmd.includes('|curl ') ||
+                                                        lowerCmd.includes('|wget ')
+                                                    ) {
+                                                        throw new Error('Network access via curl/wget is disabled because no HTTP Request node is connected. Please connect an HTTP Request node to enable web fetching.');
+                                                    }
+                                                }
+                                                return originalHandler(args, extra);
+                                            };
+                                        }
+                                    }
+                                });
+                            }
+
+                            if (isHttpRequest) {
+                                logger.log(`Found HTTP Request node in group ${sourceName}. Renaming tools to 'WebFetch' to override default.`);
+                                sdkTools.forEach(t => {
+                                    // Rename the tool to 'WebFetch' so the agent uses it for web requests
+                                    if (t.name.toLowerCase().includes('http')) {
+                                        t.name = 'WebFetch';
+                                        t.description = 'Fetch content from a URL. Use this for all web requests.';
+                                    }
+                                });
+                            }
 
                             logger.log(`Creating MCP server '${serverName}' with ${sdkTools.length} tools`);
 
@@ -340,6 +416,9 @@ export class ClaudeCodeAgent implements INodeType {
                     // Using bypassPermissions to allow automation without interaction
                     permissionMode: 'bypassPermissions',
                     mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+                    // Always disable the default Bash and WebFetch tools.
+                    // If nodes are connected, we've provided our own 'Bash' and 'WebFetch' tools above.
+                    disallowedTools: ['Bash', 'WebFetch'],
                 };
 
                 // Add working directory if specified
