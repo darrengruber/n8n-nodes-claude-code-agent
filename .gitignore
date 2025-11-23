@@ -17,3 +17,4 @@ tmp/
 logs/*.log
 logs/
 
+n8n-official-release/

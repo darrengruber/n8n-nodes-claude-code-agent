@@ -95,6 +95,14 @@ export class ClaudeCodeAgent implements INodeType {
                         default: false,
                         description: 'Whether to return detailed execution logs',
                     },
+                    {
+                        displayName: 'Working Directory',
+                        name: 'workingDirectory',
+                        type: 'string',
+                        default: '',
+                        placeholder: '/path/to/project or leave empty for current directory',
+                        description: 'The starting directory for the agent (optional, defaults to current directory)',
+                    },
                 ],
             },
         ],
@@ -157,7 +165,6 @@ export class ClaudeCodeAgent implements INodeType {
         }
 
         for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
-            let mcpServer;
             let toolsCount = 0;
             const logger = new DebugLogger(true); // Always enable for debugging
 
@@ -171,6 +178,7 @@ export class ClaudeCodeAgent implements INodeType {
                     systemMessage?: string;
                     maxTurns?: number;
                     verbose?: boolean;
+                    workingDirectory?: string;
                 };
 
                 logger.log('Retrieved parameters', {
@@ -221,26 +229,87 @@ export class ClaudeCodeAgent implements INodeType {
 
                 // Handle Tools
                 logger.logSection('Tool Processing');
+                const mcpServers: Record<string, any> = {};
+
                 try {
-                    const tools = (await this.getInputConnectionData(NodeConnectionTypes.AiTool, itemIndex)) as any[];
+                    const rawTools = (await this.getInputConnectionData(NodeConnectionTypes.AiTool, itemIndex)) as any[];
+
+                    // Flatten tools (handle Toolkits)
+                    const tools: any[] = [];
+                    if (rawTools && rawTools.length > 0) {
+                        for (const item of rawTools) {
+                            if (item.tools && Array.isArray(item.tools)) {
+                                logger.log(`Unwrapping toolkit with ${item.tools.length} tools`);
+                                tools.push(...item.tools);
+                            } else {
+                                tools.push(item);
+                            }
+                        }
+                    }
+
                     if (tools && tools.length > 0) {
                         toolsCount = tools.length;
-                        logger.log(`Found ${toolsCount} tools`, tools.map((t: any) => ({ name: t.name, description: t.description })));
+                        logger.log(`Found ${toolsCount} tools`, tools.map((t: any) => ({
+                            name: t.name,
+                            description: t.description,
+                            source: t.metadata?.sourceNodeName
+                        })));
 
-                        const sdkTools = await adaptToMcpTools(tools, options.verbose, logger);
-                        logger.log('Tools adapted to MCP format');
+                        // Group tools by source node to create distinct MCP servers
+                        const toolsBySource: Record<string, any[]> = {};
 
-                        mcpServer = createSdkMcpServer({
-                            name: 'n8n-tools',
-                            tools: sdkTools,
-                        });
-                        logger.log('MCP server created successfully');
+                        for (const tool of tools) {
+                            // Use sourceNodeName as the grouping key, fallback to 'n8n-tools'
+                            // For MCP Client tools, this will group them by the client node name
+                            const sourceName = tool.metadata?.sourceNodeName || 'n8n-tools';
+                            if (!toolsBySource[sourceName]) {
+                                toolsBySource[sourceName] = [];
+                            }
+                            toolsBySource[sourceName].push(tool);
+                        }
+
+                        logger.log('Grouped tools by source:', Object.keys(toolsBySource));
+
+                        // Create an MCP server for each group
+                        for (const [sourceName, sourceTools] of Object.entries(toolsBySource)) {
+                            const sdkTools = await adaptToMcpTools(sourceTools, options.verbose, logger);
+
+                            // Sanitize server name (alphanumeric and underscores only)
+                            // e.g. "My MCP Client" -> "My_MCP_Client"
+                            const serverName = sourceName.replace(/[^a-zA-Z0-9_]/g, '_');
+
+                            logger.log(`Creating MCP server '${serverName}' with ${sdkTools.length} tools`);
+
+                            mcpServers[serverName] = createSdkMcpServer({
+                                name: serverName,
+                                tools: sdkTools,
+                            });
+                        }
+
+                        logger.log('MCP servers created successfully');
                     } else {
                         logger.log('No tools connected');
                     }
                 } catch (error) {
                     console.warn('Failed to process tools:', error);
+                    logger.logError('Tool processing failed', error);
                 }
+
+                // Process working directory
+                let finalWorkingDirectory: string | undefined;
+                if (options.workingDirectory && options.workingDirectory.trim()) {
+                    finalWorkingDirectory = options.workingDirectory.trim();
+                    // Validate that the working directory exists (optional validation)
+                    try {
+                        // Simple validation - check if it looks like a path
+                        if (!finalWorkingDirectory.startsWith('/')) {
+                            logger.log('Working directory should be an absolute path');
+                        }
+                    } catch (error) {
+                        logger.log('Working directory validation failed:', error);
+                    }
+                }
+
 
                 // Log configuration before execution
                 logger.logSection('SDK Query Configuration');
@@ -248,11 +317,13 @@ export class ClaudeCodeAgent implements INodeType {
                     model,
                     systemPrompt: options.systemMessage ? 'Set' : 'Not set',
                     maxTurns: options.maxTurns,
-                    mcpServer: mcpServer ? 'Created' : 'Not created',
+                    mcpServerCount: Object.keys(mcpServers).length,
+                    mcpServerNames: Object.keys(mcpServers),
                     toolsCount,
                     apiKeyPresent: !!process.env.ANTHROPIC_API_KEY,
                     baseUrl: process.env.ANTHROPIC_BASE_URL,
                     promptLength: finalPrompt.length,
+                    workingDirectory: finalWorkingDirectory || 'Default (current directory)',
                 };
                 logger.log('Configuration', config);
 
@@ -262,16 +333,23 @@ export class ClaudeCodeAgent implements INodeType {
 
                 // Execute the Claude Code Agent
                 logger.log('Starting SDK query...');
+                const sdkOptions: any = {
+                    model,
+                    systemPrompt: options.systemMessage,
+                    maxTurns: options.maxTurns,
+                    // Using bypassPermissions to allow automation without interaction
+                    permissionMode: 'bypassPermissions',
+                    mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+                };
+
+                // Add working directory if specified
+                if (finalWorkingDirectory) {
+                    sdkOptions.workingDirectory = finalWorkingDirectory;
+                }
+
                 const generator = query({
                     prompt: finalPrompt,
-                    options: {
-                        model,
-                        systemPrompt: options.systemMessage,
-                        maxTurns: options.maxTurns,
-                        // Using bypassPermissions to allow automation without interaction
-                        permissionMode: 'bypassPermissions',
-                        mcpServers: mcpServer ? { 'n8n': mcpServer } : undefined,
-                    },
+                    options: sdkOptions,
                 });
 
                 let finalResult: string | undefined;

@@ -9,6 +9,67 @@ const TOOL_SCHEMAS: Record<string, any> = {
     },
 };
 
+interface SchemaExtractor {
+    name: string;
+    extract: (tool: any, logger?: DebugLogger) => any | null;
+}
+
+const SCHEMA_EXTRACTORS: SchemaExtractor[] = [
+    {
+        name: 'Direct Zod schema.shape',
+        extract: (tool: any) => tool.schema?.shape || null,
+    },
+    {
+        name: 'Nested ZodEffects wrapper',
+        extract: (tool: any) => {
+            const nestedShape = tool.schema?._def?.schema?._def?.shape;
+            return nestedShape ? nestedShape() : null;
+        },
+    },
+    {
+        name: 'Manual schema fallback',
+        extract: (tool: any) => TOOL_SCHEMAS[tool.name] || null,
+    },
+    {
+        name: 'Empty object default',
+        extract: () => ({}),
+    },
+];
+
+// Configuration for schema extraction pipeline
+const SCHEMA_CONFIG = {
+    enableManualSchemas: process.env.ENABLE_MANUAL_SCHEMAS !== 'false', // Default: true
+    enableLogging: process.env.SCHEMA_DEBUG_LOGGING === 'true', // Default: false
+};
+
+function getActiveExtractors(): SchemaExtractor[] {
+    return SCHEMA_EXTRACTORS.filter(extractor => {
+        if (extractor.name === 'Manual schema fallback') {
+            return SCHEMA_CONFIG.enableManualSchemas;
+        }
+        return true;
+    });
+}
+
+function extractSchemaShape(tool: any, logger?: DebugLogger): any {
+    const activeExtractors = getActiveExtractors();
+
+    for (const extractor of activeExtractors) {
+        try {
+            const result = extractor.extract(tool, logger);
+            if (result !== null && result !== undefined) {
+                logger?.log(`✓ Using ${extractor.name} for ${tool.name}`);
+                return result;
+            }
+        } catch (error) {
+            logger?.log(`✗ ${extractor.name} failed for ${tool.name}: ${error.message}`);
+        }
+    }
+
+    logger?.log(`! Using empty schema as final fallback for ${tool.name}`);
+    return {};
+}
+
 export async function adaptToMcpTools(tools: any[], verbose: boolean = false, logger?: DebugLogger): Promise<any[]> {
     if (!tools || tools.length === 0) {
         return [];
@@ -22,6 +83,39 @@ export async function adaptToMcpTools(tools: any[], verbose: boolean = false, lo
         if (verbose && logger) {
             logger.log(`Processing tool: ${t.name}`);
             logger.log('Tool object keys:', Object.keys(t));
+
+            // Enhanced Metadata Logging based on AI_TOOL_NODE_TYPES.md
+            logger.log(`Tool Description: ${t.description}`);
+
+            // Check for n8n specific metadata
+            if ('metadata' in t) {
+                logger.log('Tool Metadata Object:', t.metadata);
+            }
+
+            // Check for properties mentioned in AI_TOOL_NODE_TYPES.md
+            const n8nProps = ['nodeType', 'sourceNodeName', 'isFromToolkit', 'displayName', 'category', 'originalService'];
+            const foundProps: Record<string, any> = {};
+
+            n8nProps.forEach(prop => {
+                if (prop in t) foundProps[prop] = t[prop];
+                // Also check in metadata if it exists
+                if (t.metadata && prop in t.metadata) foundProps[`metadata.${prop}`] = t.metadata[prop];
+            });
+
+            if (Object.keys(foundProps).length > 0) {
+                logger.log('Found n8n Tool Properties:', foundProps);
+
+                // Derive category if nodeType is available
+                const nodeType = foundProps['nodeType'] || foundProps['metadata.nodeType'];
+                if (typeof nodeType === 'string') {
+                    logger.log('Derived Tool Category:', {
+                        isDedicatedAiTool: nodeType.startsWith('tool'),
+                        isConvertedUsableTool: nodeType.endsWith('Tool'),
+                        originalService: nodeType.endsWith('Tool') ? nodeType.slice(0, -4) : null
+                    });
+                }
+            }
+
             logger.log('Schema type:', typeof t.schema);
             logger.log('Schema:', t.schema);
             if (t.schema) {
@@ -42,28 +136,10 @@ export async function adaptToMcpTools(tools: any[], verbose: boolean = false, lo
             }
         }
 
-        // Try multiple ways to extract the schema
-        let schemaShape;
-
-        // 1. Try getting shape from Zod schema directly
-        if (t.schema && t.schema.shape) {
-            schemaShape = t.schema.shape;
-            if (verbose && logger) logger.log(`Using schema.shape for ${t.name}`);
-        }
-        // 2. Try extracting from ZodEffects wrapper (common in LangChain tools)
-        else if (t.schema && t.schema._def && t.schema._def.schema && t.schema._def.schema._def && t.schema._def.schema._def.shape) {
-            schemaShape = t.schema._def.schema._def.shape();
-            if (verbose && logger) logger.log(`Using schema._def.schema._def.shape() for ${t.name}`, schemaShape);
-        }
-        // 3. Use manual schema for known tools
-        else if (TOOL_SCHEMAS[t.name]) {
-            schemaShape = TOOL_SCHEMAS[t.name];
-            if (verbose && logger) logger.log(`Using manual schema for ${t.name}`);
-        }
-        // 4. Default to empty object (tool with no parameters)
-        else {
-            schemaShape = {};
-            if (verbose && logger) logger.log(`Using empty schema for ${t.name}`);
+        // Extract schema using the pipeline
+        const schemaShape = extractSchemaShape(t, verbose ? logger : undefined);
+        if (verbose && logger) {
+            logger.log(`Extracted schema for ${t.name} using pipeline`);
         }
 
         return tool(t.name, t.description, schemaShape, async (args) => {
