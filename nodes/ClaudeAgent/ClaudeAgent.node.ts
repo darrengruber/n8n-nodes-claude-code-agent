@@ -10,13 +10,15 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { processToolsForAgent } from './McpToolAdapter';
 import { DebugLogger } from './DebugLogger';
 
+// Cache busting: Increment the node version when you want to force icon reload
+// n8n uses the version property to handle caching internally
 export class ClaudeAgent implements INodeType {
     description: INodeTypeDescription = {
         displayName: 'Claude Agent',
         name: 'claudeAgent',
         icon: 'file:img/claudeAgent.svg',
         group: ['transform'],
-        version: 1,
+        version: 2,
         description: 'Use the Claude Code SDK to run an AI agent',
         defaults: {
             name: 'Claude Agent',
