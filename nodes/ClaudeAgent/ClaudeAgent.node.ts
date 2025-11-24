@@ -16,7 +16,7 @@ export class ClaudeAgent implements INodeType {
     description: INodeTypeDescription = {
         displayName: 'Claude Agent',
         name: 'claudeAgent',
-        icon: 'file:img/claudeAgent.svg',
+        icon: 'file:img/claudeAgent.v2.svg',
         group: ['transform'],
         version: 2,
         description: 'Use the Claude Code SDK to run an AI agent',
@@ -202,14 +202,31 @@ export class ClaudeAgent implements INodeType {
                     );
                 }
 
-                // Extract model name from the connected ChatAnthropic instance
-                // The ChatAnthropic class stores the model name in the 'model' property
+                // Extract configuration from the connected ChatAnthropic instance
+                // Based on debug output, the ChatAnthropic LangChain class uses:
+                // - anthropicApiKey: the API key from credentials
+                // - apiUrl: the base URL from credentials  
+                // - model: the model name
                 const model = connectedModel.model;
+                const apiKey = connectedModel.anthropicApiKey;
+                const baseURL = connectedModel.apiUrl;
+
+                // Set environment variables for the SDK
+                // The SDK will use these to authenticate requests
+                if (apiKey) {
+                    process.env.ANTHROPIC_API_KEY = apiKey;
+                }
+                if (baseURL) {
+                    process.env.ANTHROPIC_BASE_URL = baseURL;
+                }
 
                 logger.log('Retrieved model from Chat Model input', {
                     model,
                     modelType: connectedModel.constructor?.name,
                     isAnthropic,
+                    hasApiKey: !!apiKey,
+                    hasBaseURL: !!baseURL,
+                    baseURL: baseURL || 'default',
                 });
 
                 const options = this.getNodeParameter('options', itemIndex, {}) as {
