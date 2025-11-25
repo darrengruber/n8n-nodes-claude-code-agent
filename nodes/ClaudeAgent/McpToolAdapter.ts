@@ -290,7 +290,7 @@ export async function adaptToMcpTools(tools: any[], verbose: boolean = false, lo
 
                     // If there's an 'input' field after unwrapping, use that
                     if ('input' in actualArgs) {
-                        input = actualArgs.input;
+                        input = actualArgs.input as any;
                         if (verbose && logger) logger.log(`Unwrapped input field for ${t.name}: "${input}"`);
                     }
                     // Otherwise use the cleaned args
