@@ -30,14 +30,7 @@ export const mainProperties: INodeProperties[] = [
         default: '',
         required: true,
         placeholder: 'e.g., alpine:latest, python:3.11, node:20',
-        description: 'The Docker image to run. Examples: alpine:latest for minimal shell, python:3.11 for Python scripts, node:20 for JavaScript',
-    },
-    {
-        displayName: 'Pull Image If Not Present',
-        name: 'pullImage',
-        type: 'boolean',
-        default: true,
-        description: 'Automatically pull the image from the registry if it does not exist locally. If disabled and the image is missing, the operation will fail.',
+        description: 'The Docker image to run. Examples: alpine:latest for minimal shell, python:3.11 for Python scripts, node:20 for JavaScript. The image will be automatically pulled if it does not exist locally.',
     },
     {
         displayName: 'Entrypoint',

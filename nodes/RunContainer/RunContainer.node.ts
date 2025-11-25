@@ -6,10 +6,10 @@
       NodeOperationError,
       jsonParse,
   } from 'n8n-workflow';
-  import * as http from 'http';
   import * as fs from 'fs';
   import * as path from 'path';
   import * as os from 'os';
+  import Docker from 'dockerode';
   
   import { mainProperties } from './Description';
   
@@ -49,7 +49,6 @@
                       }
                   }
                   const image = this.getNodeParameter('image', itemIndex) as string;
-                  const pullImage = this.getNodeParameter('pullImage', itemIndex, true) as boolean;
                   const entrypoint = this.getNodeParameter('entrypoint', itemIndex, '') as string;
                   const command = this.getNodeParameter('command', itemIndex, '') as string;
                   const sendEnv = this.getNodeParameter('sendEnv', itemIndex, false) as boolean;
@@ -102,7 +101,7 @@
                       );
                   }
   
-                  const result = await runContainer(socketPath, image, pullImage, entrypoint, command, envVars);
+                  const result = await runContainer(socketPath, image, entrypoint, command, envVars);
   
                   returnData.push({
                       json: {
@@ -139,89 +138,73 @@
   async function runContainer(
       socketPath: string,
       image: string,
-      pullImage: boolean,
       entrypoint: string,
       command: string,
       envVars: string[],
   ): Promise<{ stdout: Buffer; stderr: Buffer; statusCode: number }> {
       // Parse command into array (split by spaces, respecting quotes)
-      // Handle both quoted and unquoted arguments
+      // Handle both quoted and unquoted arguments, including escaped quotes
       const parseCommand = (cmd: string): string[] => {
           if (!cmd) return [];
-          // Simple split that handles quoted strings
           const parts: string[] = [];
           let current = '';
           let inQuotes = false;
-          for (let i = 0; i < cmd.length; i++) {
+          let i = 0;
+          
+          while (i < cmd.length) {
               const char = cmd[i];
+              
+              // Handle escaped characters (including escaped quotes)
+              if (char === '\\' && i + 1 < cmd.length) {
+                  const nextChar = cmd[i + 1];
+                  if (nextChar === '"' || nextChar === '\\') {
+                      // Include the escaped character literally
+                      current += nextChar;
+                      i += 2;
+                      continue;
+                  }
+              }
+              
+              // Handle quote toggling (but not escaped quotes)
               if (char === '"' && (i === 0 || cmd[i - 1] !== '\\')) {
                   inQuotes = !inQuotes;
-              } else if (char === ' ' && !inQuotes) {
+                  i++;
+                  continue;
+              }
+              
+              // Handle space outside of quotes
+              if (char === ' ' && !inQuotes) {
                   if (current.trim()) {
                       parts.push(current.trim());
                       current = '';
                   }
-              } else {
-                  current += char;
+                  i++;
+                  continue;
               }
+              
+              // Regular character
+              current += char;
+              i++;
           }
+          
+          // Add the last part if there's anything left
           if (current.trim()) {
               parts.push(current.trim());
           }
+          
           return parts;
       };
       
       const cmdArray = parseCommand(command);
   
-      // Helper to make Docker API requests
-      const dockerRequest = async (method: string, path: string, body?: any): Promise<any> => {
-          return new Promise((resolve, reject) => {
-              const options: http.RequestOptions = {
-                  socketPath,
-                  path,
-                  method,
-                  headers: {
-                      'Content-Type': 'application/json',
-                  },
-              };
-  
-              const req = http.request(options, (res) => {
-                  const chunks: Buffer[] = [];
-                  res.on('data', (chunk) => chunks.push(chunk));
-                  res.on('end', () => {
-                      const buffer = Buffer.concat(chunks);
-                      const responseBody = buffer.toString();
-  
-                      if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-                          try {
-                              if (responseBody) {
-                                  resolve(JSON.parse(responseBody));
-                              } else {
-                                  resolve({});
-                              }
-                          } catch (e) {
-                              // If not JSON (e.g. logs), return string
-                              resolve(responseBody);
-                          }
-                      } else {
-                          reject(new Error(`Docker API Error: ${res.statusCode} - ${responseBody} `));
-                      }
-                  });
-              });
-  
-              req.on('error', (e) => reject(e));
-  
-              if (body) {
-                  req.write(JSON.stringify(body));
-              }
-              req.end();
-          });
-      };
+      // Initialize Docker client
+      const docker = new Docker({ socketPath });
   
       // 1. Check if image exists, pull if needed
       let imageExists = false;
       try {
-          await dockerRequest('GET', `/images/${image}/json`);
+          const dockerImage = docker.getImage(image);
+          await dockerImage.inspect();
           imageExists = true;
       } catch (error) {
           // Image doesn't exist locally
@@ -229,82 +212,62 @@
       }
 
       if (!imageExists) {
-          if (pullImage) {
-              // Pull the image
-              await new Promise<void>((resolve, reject) => {
-                  const options: http.RequestOptions = {
-                      socketPath,
-                      path: `/images/create?fromImage=${encodeURIComponent(image)}`,
-                      method: 'POST',
-                  };
-                  const req = http.request(options, (res) => {
-                      let hasError = false;
-                      res.on('data', (chunk) => {
-                          // Docker API streams JSON lines for pull progress
-                          // Check for error messages in the stream
-                          const text = chunk.toString();
-                          if (text.includes('"error"') || text.includes('"errorDetail"')) {
-                              hasError = true;
-                          }
-                      });
-                      res.on('end', () => {
-                          if (hasError && res.statusCode && res.statusCode >= 400) {
-                              reject(new Error(`Failed to pull image ${image}. Check if the image name is correct and you have access to the registry.`));
-                          } else {
-                              resolve();
-                          }
-                      });
-                  });
-                  req.on('error', (err) => {
+          // Always pull the image if it doesn't exist
+          await new Promise<void>((resolve, reject) => {
+              docker.pull(image, (err: Error | null, stream: NodeJS.ReadableStream | null) => {
+                  if (err) {
                       reject(new Error(`Failed to pull image ${image}: ${err.message}`));
+                      return;
+                  }
+                  
+                  if (!stream) {
+                      reject(new Error(`Failed to pull image ${image}: No stream returned`));
+                      return;
+                  }
+                  
+                  docker.modem.followProgress(stream, (err: Error | null) => {
+                      if (err) {
+                          reject(new Error(`Failed to pull image ${image}: ${err.message}`));
+                      } else {
+                          resolve();
+                      }
                   });
-                  req.end();
               });
-          } else {
-              throw new Error(`Image ${image} not found locally and pullImage is disabled. Enable "Pull Image If Not Present" to automatically pull the image.`);
-          }
+          });
       }
   
       // 2. Create Container
-      const createBody: any = {
+      const createOptions: any = {
           Image: image,
           Env: envVars,
           Tty: false,
+          AttachStdout: true,
+          AttachStderr: true,
       };
 
       // Set entrypoint if provided
       if (entrypoint) {
-          createBody.Entrypoint = parseCommand(entrypoint);
+          createOptions.Entrypoint = parseCommand(entrypoint);
       }
 
       // Set command if provided
       if (cmdArray.length > 0) {
-          createBody.Cmd = cmdArray;
+          createOptions.Cmd = cmdArray;
       }
-      const createRes = await dockerRequest('POST', '/containers/create', createBody);
-      const containerId = createRes.Id;
+      
+      const container = await docker.createContainer(createOptions);
   
       // 3. Start Container
-      await dockerRequest('POST', `/containers/${containerId}/start`);
+      await container.start();
   
       // 4. Wait for Container
-      const waitRes = await dockerRequest('POST', `/containers/${containerId}/wait`);
-      const statusCode = waitRes.StatusCode;
+      const waitResult = await container.wait();
+      const statusCode = waitResult.StatusCode;
   
       // 5. Get Logs
-      const logsBuffer = await new Promise<Buffer>((resolve, reject) => {
-          const options: http.RequestOptions = {
-              socketPath,
-              path: `/containers/${containerId}/logs?stdout=1&stderr=1&stderr=1&logs=1`,
-              method: 'GET',
-          };
-          const req = http.request(options, (res) => {
-              const chunks: Buffer[] = [];
-              res.on('data', (chunk) => chunks.push(chunk));
-              res.on('end', () => resolve(Buffer.concat(chunks)));
-          });
-          req.on('error', reject);
-          req.end();
+      const logsBuffer = await container.logs({
+          stdout: true,
+          stderr: true,
       });
   
       // Parse Docker logs (multiplexed)
@@ -327,7 +290,7 @@
       }
   
       // 6. Remove Container
-      await dockerRequest('DELETE', `/containers/${containerId}?v=1`);
+      await container.remove({ v: true });
   
       return { stdout, stderr, statusCode };
   }

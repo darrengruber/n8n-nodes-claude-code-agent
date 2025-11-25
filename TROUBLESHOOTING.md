@@ -1,5 +1,35 @@
 # Known Issues
 
+## Copy/Paste Node Type Error
+
+### Symptom
+Error when executing a workflow: `Unrecognized node type: CUSTOM.claudeAgent`
+
+### Cause
+When copying/pasting nodes in n8n, the node type identifier is preserved. If the node was saved with an old identifier format (e.g., `CUSTOM.claudeAgent`), n8n cannot resolve it to the current format (`CUSTOM.n8n-nodes-claude-agent.claudeAgent`).
+
+This is a limitation of how n8n handles custom node type identifiers - they're prefixed with the package name, and copied nodes preserve the old identifier.
+
+### Solution
+
+**Option 1: Delete and Re-add (Recommended)**
+1. Delete the copied node
+2. Add a fresh "Claude Agent" node from the node palette
+3. Reconfigure and reconnect it
+
+**Option 2: Fix Workflow JSON**
+1. Export your workflow
+2. Find the node with `"type": "CUSTOM.claudeAgent"`
+3. Change it to `"type": "CUSTOM.n8n-nodes-claude-agent.claudeAgent"`
+4. Import the workflow back
+
+### Prevention
+- Avoid copying agent nodes - add new ones from the palette instead
+- If you must copy, verify the node type identifier matches the current format
+
+### Note
+n8n's built-in nodes (like `@n8n/n8n-nodes-langchain.agent`) don't have this issue because they use a consistent namespace that's handled by n8n core. This limitation only affects custom/community nodes.
+
 ## Claude Code SDK Process Exit Error
 
 ### Symptom
