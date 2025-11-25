@@ -208,6 +208,25 @@ export async function adaptToMcpTools(tools: any[], verbose: boolean = false, lo
     }
 
     return tools.map((t: any) => {
+        // Check if this is already an SDK tool (created with tool() from @anthropic-ai/claude-agent-sdk)
+        // SDK tools have a handler function but no invoke/call methods
+        // They're already in the correct format and don't need adaptation
+        // Check multiple ways to detect SDK tools:
+        // 1. Has handler but no invoke/call (SDK tool structure)
+        // 2. Has _def.handler (internal SDK structure)
+        // 3. Is a function itself (some SDK tool formats)
+        const hasInvokeOrCall = t && (typeof t.invoke === 'function' || typeof t.call === 'function');
+        const hasHandler = t && (typeof t.handler === 'function' || (t._def && typeof t._def.handler === 'function'));
+        const isSdkTool = t && typeof t === 'object' && !hasInvokeOrCall && hasHandler;
+        
+        if (isSdkTool) {
+            if (verbose && logger) {
+                logger.log(`Tool ${t.name} is already an SDK tool (has handler, no invoke/call), skipping adaptation`);
+            }
+            // Return SDK tool as-is - it's already in the correct format
+            return t;
+        }
+
         // Assuming LangChain tool structure
         // t.schema is usually a Zod schema. We need the shape for the SDK tool definition.
         // If schema is missing or doesn't have shape, default to empty object.
@@ -278,6 +297,9 @@ export async function adaptToMcpTools(tools: any[], verbose: boolean = false, lo
             try {
                 // Try to use invoke if available (newer LangChain), fallback to call
                 // invoke() handles input unification (e.g. string vs object) better than call()
+                if (!t.invoke && !t.call) {
+                    throw new Error(`Tool ${t.name} has neither invoke nor call method. Cannot execute.`);
+                }
                 const method = t.invoke ? t.invoke.bind(t) : t.call.bind(t);
 
                 // The SDK wraps tool calls with metadata (signal, _meta, requestId)
