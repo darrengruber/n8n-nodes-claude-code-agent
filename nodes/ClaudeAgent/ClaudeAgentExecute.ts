@@ -8,129 +8,43 @@ import {
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { processToolsForAgent } from './McpToolAdapter';
 import { DebugLogger } from './DebugLogger';
-
-function normalizeMessageContent(content: any): string {
-    if (content === undefined || content === null) return '';
-
-    if (Array.isArray(content)) {
-        return content
-            .map((part) => {
-                if (typeof part === 'string') return part;
-                if (typeof part === 'object' && part !== null) {
-                    if (typeof part.text === 'string') return part.text;
-                    if (typeof part.content === 'string') return part.content;
-                }
-                return JSON.stringify(part);
-            })
-            .filter(Boolean)
-            .join(' ');
-    }
-
-    if (typeof content === 'object') {
-        if (typeof (content as any).text === 'string') return (content as any).text;
-        if (typeof (content as any).content === 'string') return (content as any).content;
-    }
-
-    return String(content);
-}
-
-function formatMemoryMessages(messages: any[]): string {
-    // Claude's SDK only accepts a single prompt string; it does not have a native
-    // structured "messages" parameter. We therefore flatten LangChain/n8n memory
-    // messages into the User/Assistant/System/Tool format Claude expects.
-    const roleMap: Record<string, string> = {
-        human: 'User',
-        user: 'User',
-        ai: 'Assistant',
-        assistant: 'Assistant',
-        system: 'System',
-        tool: 'Tool',
-        function: 'Tool',
-        function_call: 'Tool',
-        generic: 'User',
-    };
-
-    return messages
-        .map((message: any) => {
-            // n8n memory nodes expose LangChain BaseMessage objects which use
-            // _getType(), while some integrations provide a "role" or "type" key.
-            const type =
-                typeof message._getType === 'function'
-                    ? message._getType()
-                    : message.type || message.role || 'user';
-
-            const role = roleMap[type?.toLowerCase?.() ?? 'user'] || 'User';
-            const content = normalizeMessageContent(message.content ?? message.text ?? '');
-
-            // Preserve tool/function names when available so Claude can follow
-            // the same interface expectations as the LangChain Agent executor.
-            const name = (message.name || message.tool || message.function_call)?.toString?.();
-            const prefix = name && role === 'Tool' ? `${role} (${name})` : role;
-
-            return `${prefix}: ${content}`;
-        })
-        .join('\n');
-}
-
+import { getMemoryMessages, formatMemoryMessages, saveMemoryContext } from './ClaudeMemory';
 async function buildPromptWithMemory(
     this: IExecuteFunctions | ISupplyDataFunctions,
     itemIndex: number,
     prompt: string,
     logger: DebugLogger,
 ): Promise<string> {
-    try {
-        const memory = (await this.getInputConnectionData(NodeConnectionTypes.AiMemory, itemIndex)) as any;
-        if (!memory) return prompt;
+    const messages = await getMemoryMessages(this, itemIndex, logger);
 
-        let messages: any[] | string | undefined;
+    if (!messages) {
+        return prompt;
+    }
 
-        if (typeof memory.getMessages === 'function') {
-            messages = await memory.getMessages();
-            logger.log('Retrieved messages via getMessages from memory node', {
-                messageCount: Array.isArray(messages) ? messages.length : undefined,
+    if (typeof messages === 'string') {
+        logger.log('Injecting string chat history into prompt');
+        return `Here is the conversation history:\n${messages}\n\nCurrent request:\n${prompt}`;
+    }
+
+    if (Array.isArray(messages) && messages.length > 0) {
+        // Log the first message structure for debugging
+        logger.log('First memory message structure', {
+            keys: Object.keys(messages[0]),
+            sample: messages[0]
+        });
+
+        const history = formatMemoryMessages(messages);
+        if (history) {
+            logger.log('Injecting structured chat history into prompt', {
+                length: history.length,
+                preview: history.substring(0, 2000) + '...'
             });
+            return `Here is the conversation history:\n${history}\n\nCurrent request:\n${prompt}`;
+        } else {
+            logger.log('Formatted history was empty');
         }
-
-        if (messages === undefined && typeof memory.loadMemoryVariables === 'function') {
-            const memoryVariables = await memory.loadMemoryVariables({});
-            messages =
-                memoryVariables?.chat_history ??
-                memoryVariables?.history ??
-                memoryVariables?.messages ??
-                memoryVariables?.buffer;
-            logger.log('Retrieved messages via loadMemoryVariables from memory node', {
-                keys: memoryVariables ? Object.keys(memoryVariables) : [],
-                messageCount: Array.isArray(messages) ? messages.length : undefined,
-            });
-        }
-
-        if (!messages) return prompt;
-
-        if (typeof messages === 'string') {
-            logger.log('Injecting string chat history into prompt');
-            return `Here is the conversation history:\n${messages}\n\nCurrent request:\n${prompt}`;
-        }
-
-        if (Array.isArray(messages) && messages.length > 0) {
-            const history = formatMemoryMessages(messages);
-            if (history) {
-                logger.log('Injecting structured chat history into prompt', {
-                    roles: Array.from(
-                        new Set(
-                            messages.map((m) =>
-                                typeof m._getType === 'function'
-                                    ? m._getType()
-                                    : m.type || m.role || 'user',
-                            ),
-                        ),
-                    ),
-                });
-                return `Here is the conversation history:\n${history}\n\nCurrent request:\n${prompt}`;
-            }
-        }
-    } catch (error) {
-        console.warn('Failed to retrieve or process memory:', error);
-        logger.logError('Failed to process memory', error as Error);
+    } else {
+        logger.log('Messages array was empty or invalid');
     }
 
     return prompt;
@@ -222,7 +136,7 @@ export async function claudeAgentExecute(
             }
 
             // Handle Memory
-            const finalPrompt = await buildPromptWithMemory.call(this, itemIndex, prompt, logger);
+            let finalPrompt = await buildPromptWithMemory.call(this, itemIndex, prompt, logger);
 
             // Handle Output Parser
             let outputParser: any;
@@ -372,6 +286,9 @@ export async function claudeAgentExecute(
                     throw new NodeOperationError(this.getNode(), `Output parsing failed: ${error.message}`);
                 }
             }
+
+            // Save context to memory if available
+            await saveMemoryContext(this, itemIndex, prompt, finalResult, logger);
 
             const jsonResult: { output: any; logs?: string[] } = {
                 output: output,
