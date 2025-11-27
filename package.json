@@ -27,16 +27,17 @@
     "files": [
         "dist"
     ],
-    "n8n": {
-        "n8nNodesApiVersion": 1,
-        "strict": true,
-        "credentials": [],
-        "nodes": [
-            "dist/nodes/ClaudeAgent/ClaudeAgent.node.js",
-            "dist/nodes/ClaudeAgent/ClaudeAgentTool.node.js",
-            "dist/nodes/RunContainer/RunContainer.node.js"
-        ]
-    },
+        "n8n": {
+                "n8nNodesApiVersion": 1,
+                "strict": true,
+                "credentials": [],
+                "nodes": [
+                        "dist/nodes/ClaudeAgent/ClaudeAgent.node.js",
+                        "dist/nodes/ClaudeAgent/ClaudeAgentTool.node.js",
+                        "dist/nodes/RunContainer/RunContainer.node.js",
+                        "dist/nodes/DebugNode/DebugNode.node.js"
+                ]
+        },
     "devDependencies": {
         "@n8n/node-cli": "*",
         "@types/node": "^24.10.1",
