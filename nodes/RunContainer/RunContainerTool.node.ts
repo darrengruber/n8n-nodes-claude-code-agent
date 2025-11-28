@@ -137,20 +137,49 @@ export class RunContainerTool implements INodeType {
                     );
                 }
 
-                // Import the runContainer function from the main RunContainer node
-                const { runContainer } = require('./RunContainer.node');
-                const result = await runContainer(socketPath, image, entrypoint, command, envVars);
+                // Extract binary parameters from tool args, falling back to node parameters
+                // Note: LLM might not pass these complex objects, so we rely on node config mostly
+                // but we check toolArgs just in case
+                const binaryDataInput = toolArgs.binaryDataInput !== undefined
+                    ? toolArgs.binaryDataInput
+                    : this.getNodeParameter('binaryDataInput', itemIndex, false) as boolean;
 
-                returnData.push({
-                    json: {
-                        stdout: result.stdout.toString(),
-                        stderr: result.stderr.toString(),
-                        exitCode: result.statusCode,
-                    },
-                    pairedItem: {
-                        item: itemIndex,
-                    },
+                const binaryDataOutput = toolArgs.binaryDataOutput !== undefined
+                    ? toolArgs.binaryDataOutput
+                    : this.getNodeParameter('binaryDataOutput', itemIndex, false) as boolean;
+
+                // For binary mappings, we primarily rely on node config as it's complex for LLM
+                // But if LLM passes a structure that matches, we use it
+                let binaryFileMappings = { mappings: [] as Array<{ binaryPropertyName: string; containerPath: string }> };
+                if (toolArgs.binaryFileMappings && typeof toolArgs.binaryFileMappings === 'object') {
+                    binaryFileMappings = toolArgs.binaryFileMappings as any;
+                } else {
+                    binaryFileMappings = this.getNodeParameter(
+                        'binaryFileMappings',
+                        itemIndex,
+                        { mappings: [] },
+                    ) as { mappings: Array<{ binaryPropertyName: string; containerPath: string }> };
+                }
+
+                const outputFilePattern = toolArgs.outputFilePattern || this.getNodeParameter('outputFilePattern', itemIndex, '*') as string;
+
+                // Import the executeContainerWithBinary function
+                const { executeContainerWithBinary } = require('./RunContainerLogic');
+
+                const result = await executeContainerWithBinary(this, itemIndex, {
+                    image,
+                    entrypoint,
+                    command,
+                    socketPath,
+                    envVars,
+                    binaryDataInput,
+                    binaryDataOutput,
+                    binaryFileMappings,
+                    outputFilePattern,
                 });
+
+                returnData.push(result);
+
             } catch (error) {
                 if (this.continueOnFail()) {
                     returnData.push({
