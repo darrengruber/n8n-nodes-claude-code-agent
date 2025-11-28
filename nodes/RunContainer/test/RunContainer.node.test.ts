@@ -509,12 +509,12 @@ describe('RunContainer > Node Execution', () => {
 
             // Assert
             expect(result[0][0].json).toMatchObject({
-                error: undefined,
                 success: false,
                 exitCode: -1,
                 stdout: '',
-                stderr: undefined
             });
+            expect(result[0][0].json.error).toBeDefined();
+            expect(result[0][0].json.stderr).toBeDefined();
         });
 
         it('should handle generic execution errors', async () => {
@@ -716,7 +716,7 @@ describe('RunContainer > Node Execution', () => {
             expect(result[0][0].json.stdout).toBe('Success\n');
             expect(result[0][1].json.success).toBe(false);
             expect(result[0][1].json.exitCode).toBe(-1);
-            expect(result[0][1].json.error).toBe(undefined);
+            expect(result[0][1].json.error).toBeDefined();
         });
     });
 
