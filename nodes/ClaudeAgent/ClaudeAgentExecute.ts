@@ -2,53 +2,25 @@ import {
     IExecuteFunctions,
     INodeExecutionData,
     NodeConnectionTypes,
-    NodeOperationError,
     ISupplyDataFunctions,
 } from 'n8n-workflow';
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { processToolsForAgent } from './McpToolAdapter';
-import { DebugLogger } from './DebugLogger';
-import { getMemoryMessages, formatMemoryMessages, saveMemoryContext } from './ClaudeMemory';
-async function buildPromptWithMemory(
-    this: IExecuteFunctions | ISupplyDataFunctions,
-    itemIndex: number,
-    prompt: string,
-    logger: DebugLogger,
-): Promise<string> {
-    const messages = await getMemoryMessages(this, itemIndex, logger);
-
-    if (!messages) {
-        return prompt;
-    }
-
-    if (typeof messages === 'string') {
-        logger.log('Injecting string chat history into prompt');
-        return `Here is the conversation history:\n${messages}\n\nCurrent request:\n${prompt}`;
-    }
-
-    if (Array.isArray(messages) && messages.length > 0) {
-        // Log the first message structure for debugging
-        logger.log('First memory message structure', {
-            keys: Object.keys(messages[0]),
-            sample: messages[0]
-        });
-
-        const history = formatMemoryMessages(messages);
-        if (history) {
-            logger.log('Injecting structured chat history into prompt', {
-                length: history.length,
-                preview: history.substring(0, 2000) + '...'
-            });
-            return `Here is the conversation history:\n${history}\n\nCurrent request:\n${prompt}`;
-        } else {
-            logger.log('Formatted history was empty');
-        }
-    } else {
-        logger.log('Messages array was empty or invalid');
-    }
-
-    return prompt;
-}
+import { DebugLogger } from './utils/debugLogger';
+import { ClaudeAgentOptions, SdkConfiguration, ClaudeAgentResultData } from './interfaces';
+import {
+    getConnectedModel,
+    setupSdkEnvironment,
+    validatePrompt,
+    processWorkingDirectory,
+    buildSdkConfiguration,
+    logConfiguration,
+    throwEnhancedError,
+    canContinueOnFail,
+    processOutputParser,
+} from './GenericFunctions';
+import { buildPromptWithMemory, addOutputParserInstructions } from './utils';
+import { processSdkMessages, saveMemoryContextSafe, formatOutputResult } from './utils/outputFormatter';
+import { processConnectedTools } from './utils/toolProcessor';
 
 /**
  * Shared execute function for both ClaudeAgent and ClaudeAgentTool
@@ -61,64 +33,30 @@ export async function claudeAgentExecute(
     const returnData: INodeExecutionData[] = [];
 
     for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
-        let toolsCount = 0;
         const logger = new DebugLogger(true); // Always enable for debugging
 
         console.log('[ClaudeAgent] Logger created, log path:', logger.getLogPath());
         logger.logSection(`Processing Item ${itemIndex}`);
 
         try {
+            // Get and validate basic parameters
             const prompt = this.getNodeParameter('text', itemIndex, '') as string;
+            const options = this.getNodeParameter('options', itemIndex, {}) as ClaudeAgentOptions;
 
-            // Retrieve the model from the AI Language Model input
-            const connectedModel = (await this.getInputConnectionData(NodeConnectionTypes.AiLanguageModel, itemIndex)) as any;
+            validatePrompt(prompt, this.getNode());
 
-            if (!connectedModel) {
-                throw new NodeOperationError(
-                    this.getNode(),
-                    'Please connect an Anthropic Chat Model to the Chat Model input'
-                );
-            }
+            // Get and validate connected model
+            const { model, apiKey, baseURL } = await getConnectedModel(this, itemIndex);
 
-            // Validate that it's an Anthropic model by checking the class type
-            const isAnthropic = connectedModel.constructor?.name === 'ChatAnthropic' ||
-                connectedModel._llmType?.() === 'anthropic';
-
-            if (!isAnthropic) {
-                throw new NodeOperationError(
-                    this.getNode(),
-                    'Only Anthropic Chat Models are supported. Please connect an Anthropic Chat Model node.'
-                );
-            }
-
-            // Extract configuration from the connected ChatAnthropic instance
-            const model = connectedModel.model;
-            const apiKey = connectedModel.anthropicApiKey;
-            const baseURL = connectedModel.apiUrl;
-
-            // Set environment variables for the SDK
-            if (apiKey) {
-                process.env.ANTHROPIC_API_KEY = apiKey;
-            }
-            if (baseURL) {
-                process.env.ANTHROPIC_BASE_URL = baseURL;
-            }
+            // Set up SDK environment
+            setupSdkEnvironment(apiKey, baseURL);
 
             logger.log('Retrieved model from Chat Model input', {
                 model,
-                modelType: connectedModel.constructor?.name,
-                isAnthropic,
                 hasApiKey: !!apiKey,
                 hasBaseURL: !!baseURL,
                 baseURL: baseURL || 'default',
             });
-
-            const options = this.getNodeParameter('options', itemIndex, {}) as {
-                systemMessage?: string;
-                maxTurns?: number;
-                verbose?: boolean;
-                workingDirectory?: string;
-            };
 
             logger.log('Retrieved parameters', {
                 promptLength: prompt.length,
@@ -127,18 +65,10 @@ export async function claudeAgentExecute(
                 options
             });
 
-            // Validate prompt is not empty
-            if (!prompt || prompt.trim().length === 0) {
-                throw new NodeOperationError(
-                    this.getNode(),
-                    'The "Text" parameter is required and cannot be empty. Please provide a prompt for the agent.'
-                );
-            }
-
-            // Handle Memory
+            // Build prompt with memory context
             let finalPrompt = await buildPromptWithMemory.call(this, itemIndex, prompt, logger);
 
-            // Handle Output Parser
+            // Handle output parser
             let outputParser: any;
             try {
                 outputParser = (await this.getInputConnectionData(NodeConnectionTypes.AiOutputParser, itemIndex)) as any;
@@ -146,63 +76,19 @@ export async function claudeAgentExecute(
                 // Ignore if not connected
             }
 
-            if (outputParser) {
-                const formatInstructions = outputParser.getFormatInstructions();
-                if (formatInstructions) {
-                    finalPrompt += `\n\n${formatInstructions}`;
-                    logger.log('Added output parser instructions to prompt');
-                }
-            }
+            finalPrompt = addOutputParserInstructions(finalPrompt, outputParser, logger);
 
-            // Handle Tools
-            logger.logSection('Tool Processing');
-            let mcpServers: Record<string, any> = {};
-            let disallowedTools: string[] = ['Bash', 'WebFetch']; // Default disallowed
-
-            try {
-                const rawTools = (await this.getInputConnectionData(NodeConnectionTypes.AiTool, itemIndex)) as any[];
-
-                // Flatten tools (handle Toolkits)
-                const tools: any[] = [];
-                if (rawTools && rawTools.length > 0) {
-                    for (const item of rawTools) {
-                        if (item.tools && Array.isArray(item.tools)) {
-                            logger.log(`Unwrapping toolkit with ${item.tools.length} tools`);
-                            tools.push(...item.tools);
-                        } else {
-                            tools.push(item);
-                        }
-                    }
-                }
-
-                const result = await processToolsForAgent(tools, { verbose: !!options.verbose }, logger);
-                mcpServers = result.mcpServers;
-                disallowedTools = result.disallowedTools;
-
-                // Count total tools across all servers
-                toolsCount = tools.length;
-
-            } catch (error) {
-                console.warn('Failed to process tools:', error);
-                logger.logError('Tool processing failed', error);
-            }
+            // Process connected tools
+            const { mcpServers, disallowedTools, toolsCount } = await processConnectedTools(
+                this, itemIndex, !!options.verbose, logger
+            );
 
             // Process working directory
-            let finalWorkingDirectory: string | undefined;
-            if (options.workingDirectory && options.workingDirectory.trim()) {
-                finalWorkingDirectory = options.workingDirectory.trim();
-                try {
-                    if (!finalWorkingDirectory.startsWith('/')) {
-                        logger.log('Working directory should be an absolute path');
-                    }
-                } catch (error) {
-                    logger.log('Working directory validation failed:', error);
-                }
-            }
+            const finalWorkingDirectory = processWorkingDirectory(options.workingDirectory);
 
             // Log configuration before execution
             logger.logSection('SDK Query Configuration');
-            const config = {
+            const config: SdkConfiguration = {
                 model,
                 systemPrompt: options.systemMessage ? 'Set' : 'Not set',
                 maxTurns: options.maxTurns,
@@ -214,132 +100,82 @@ export async function claudeAgentExecute(
                 promptLength: finalPrompt.length,
                 workingDirectory: finalWorkingDirectory || 'Default (current directory)',
             };
-            logger.log('Configuration', config);
+            logConfiguration(logger, config, !!options.verbose);
 
-            if (options.verbose) {
-                console.log('[ClaudeAgent] Configuration:', config);
-            }
-
-            // Execute the Claude Agent
+            // Build SDK configuration and execute
             logger.log('Starting SDK query...');
-            const sdkOptions: any = {
-                model,
-                systemPrompt: options.systemMessage,
-                maxTurns: options.maxTurns,
-                permissionMode: 'bypassPermissions',
-                mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-                disallowedTools: disallowedTools,
-            };
-
-            // Add working directory if specified
-            if (finalWorkingDirectory) {
-                sdkOptions.workingDirectory = finalWorkingDirectory;
-            }
+            const sdkConfiguration = buildSdkConfiguration(
+                model, options, mcpServers, disallowedTools, finalWorkingDirectory
+            );
 
             const generator = query({
                 prompt: finalPrompt,
-                options: sdkOptions,
+                options: sdkConfiguration,
             });
 
-            let finalResult: string | undefined;
-            const logs: string[] = [];
-            let messageCount = 0;
-
-            logger.logSection('Processing SDK Messages');
-
-            for await (const message of generator) {
-                messageCount++;
-                // Use logTurn to capture the message for markdown generation
-                logger.logTurn(message);
-
-                if (options.verbose) {
-                    logs.push(JSON.stringify(message));
-                }
-
-                if (message.type === 'result') {
-                    if (message.subtype === 'success') {
-                        finalResult = message.result;
-                    } else if (message.subtype === 'error_during_execution' || message.subtype === 'error_max_turns' || message.subtype === 'error_max_budget_usd' || message.subtype === 'error_max_structured_output_retries') {
-                        throw new Error(`Claude Agent failed: ${message.subtype}. Errors: ${message.errors?.join(', ')}`);
-                    }
-                }
-            }
+            // Process SDK messages
+            const { result: finalResult, logs, messageCount } = await processSdkMessages(
+                generator, !!options.verbose, logger
+            );
 
             logger.log(`Processed ${messageCount} messages total`);
 
             // Generate the markdown log file
             logger.finalize();
 
-            if (finalResult === undefined) {
-                logger.logError('No result received', new Error('Agent finished without result'));
-                throw new Error('Claude Agent finished without a result.');
-            }
-
-            let output: any = finalResult;
-            if (outputParser) {
-                try {
-                    logger.log('Parsing output with connected parser');
-                    output = await outputParser.parse(finalResult);
-                    logger.log('Output parsed successfully');
-                } catch (error) {
-                    logger.logError('Output parsing failed', error);
-                    throw new NodeOperationError(this.getNode(), `Output parsing failed: ${error.message}`);
-                }
-            }
+            // Process output with parser if available
+            let output = await processOutputParser(this, itemIndex, finalResult, logger);
 
             // Save context to memory if available
-            await saveMemoryContext(this, itemIndex, prompt, finalResult, logger);
+            await saveMemoryContextSafe(this, itemIndex, prompt, finalResult, logger);
 
-            const jsonResult: { output: any; logs?: string[] } = {
-                output: output,
-            };
-
-            if (options.verbose) {
-                jsonResult.logs = logs;
-            }
+            // Format final result
+            const jsonResult = formatOutputResult(output, !!options.verbose, logs);
 
             returnData.push({
-                json: jsonResult,
+                json: jsonResult as ClaudeAgentResultData,
                 pairedItem: {
                     item: itemIndex,
                 },
             });
 
         } catch (error) {
-            // Enhanced Error Logging
             logger.logError('Execution failed', error);
 
-            const errorDetails = {
-                message: error.message,
-                stack: error.stack,
-                code: error.code,
-                context: error.context,
-                apiKeyPresent: !!process.env.ANTHROPIC_API_KEY,
-                baseUrl: process.env.ANTHROPIC_BASE_URL,
-                toolsCount,
-                logFile: logger.getLogPath(),
-            };
-            console.error('[ClaudeAgent] Execution Error:', JSON.stringify(errorDetails, null, 2));
-
-            // Check if continueOnFail is available (it's on IExecuteFunctions, not ISupplyDataFunctions)
-            if ('continueOnFail' in this && this.continueOnFail()) {
-                returnData.push({ json: { error: error.message, details: errorDetails }, error, pairedItem: itemIndex });
-            } else {
-                if (error.context) {
-                    error.context.itemIndex = itemIndex;
-                    throw error;
-                }
-                // Include more details in the thrown error
-                const enhancedError = new Error(`Claude Agent failed: ${error.message}. Check n8n logs for details.`);
-                enhancedError.stack = error.stack;
-
-                throw new NodeOperationError(this.getNode(), enhancedError, {
-                    itemIndex,
+            if (canContinueOnFail(this) && this.continueOnFail()) {
+                returnData.push({
+                    json: {
+                        error: error.message,
+                        details: createEnhancedError(error, itemIndex, 0, logger)
+                    },
+                    error,
+                    pairedItem: itemIndex
                 });
+            } else {
+                throwEnhancedError(error, this.getNode(), itemIndex, 0, logger);
             }
         }
     }
 
     return [returnData];
+}
+
+// Helper function for continueOnFail case
+function createEnhancedError(
+    error: Error,
+    itemIndex: number,
+    toolsCount: number,
+    logger: DebugLogger
+) {
+    return {
+        message: error.message,
+        stack: error.stack,
+        code: (error as any).code,
+        context: (error as any).context,
+        apiKeyPresent: !!process.env.ANTHROPIC_API_KEY,
+        baseUrl: process.env.ANTHROPIC_BASE_URL,
+        toolsCount,
+        logFile: logger.getLogPath(),
+    };
 }
 

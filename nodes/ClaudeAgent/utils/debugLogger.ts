@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { formatTurnsFromData } from './ClaudeFormatTurns';
+import { formatTurnsFromData } from './turnFormatter';
 
 export class DebugLogger {
     private logDir: string;

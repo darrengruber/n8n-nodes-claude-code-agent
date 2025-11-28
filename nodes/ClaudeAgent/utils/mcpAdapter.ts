@@ -1,6 +1,6 @@
 import { tool, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { DebugLogger } from './DebugLogger';
+import { DebugLogger } from './debugLogger';
 
 // Manual schema definitions for common n8n tools that might not have proper schema.shape
 const TOOL_SCHEMAS: Record<string, any> = {
