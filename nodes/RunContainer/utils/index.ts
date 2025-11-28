@@ -3,6 +3,12 @@ import type {
     SendIn,
 } from '../interfaces';
 
+// Export all utility modules
+export * from './commandParser';
+export * from './socketDetector';
+export * from './logParser';
+
+// Original utility functions (keeping for compatibility)
 const extractPlaceholders = (text: string): string[] => {
     const placeholder = /(\{[a-zA-Z0-9_-]+\})/g;
     const returnData: string[] = [];

@@ -1,0 +1,75 @@
+{
+  "name": "RunContainer Test Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "trigger-node",
+      "name": "When clicking 'Execute Workflow'"
+    },
+    {
+      "parameters": {
+        "image": "alpine:latest",
+        "command": "echo 'Hello from container!' && echo 'Test completed successfully'",
+        "entrypoint": "",
+        "sendEnv": false
+      },
+      "type": "n8n-nodes-base.runContainer",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ],
+      "id": "container-node",
+      "name": "Run Container"
+    }
+  ],
+  "pinData": {
+    "Run Container": [
+      {
+        "json": {
+          "stdout": "Hello from container!\nTest completed successfully\n",
+          "stderr": "",
+          "exitCode": 0,
+          "success": true,
+          "hasOutput": true,
+          "container": {
+            "image": "alpine:latest",
+            "command": "echo 'Hello from container!' && echo 'Test completed successfully'",
+            "entrypoint": "",
+            "environmentVariablesCount": 0,
+            "socketPath": "/var/run/docker.sock"
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When clicking 'Execute Workflow'": {
+      "main": [
+        [
+          {
+            "node": "Run Container",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "test-workflow",
+  "tags": []
+}
