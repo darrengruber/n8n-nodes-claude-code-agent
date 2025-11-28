@@ -1,0 +1,77 @@
+{
+  "name": "Claude Agent Test Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "prompt",
+              "value": "Hello, can you help me understand how n8n workflows work?"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "test-input",
+      "name": "Test Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-3-sonnet-20240229",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "anthropic-model",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.prompt }}",
+        "options": {
+          "verbose": true,
+          "maxTurns": 20
+        }
+      },
+      "id": "claude-agent",
+      "name": "Claude Agent",
+      "type": "n8n-nodes-claude-agent.claudeAgent",
+      "typeVersion": 2,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Test Input": {
+      "main": [
+        [
+          {
+            "node": "Claude Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Claude Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "1"
+}
