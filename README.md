@@ -11,18 +11,23 @@
 
 A powerful n8n community node package that brings **Claude Agent SDK** capabilities to your workflows, along with **Docker container execution** for running isolated code and commands. Build intelligent, tool-using AI agents that can execute code, run containers, and interact with your entire n8n workflow ecosystem.
 
+> **🎉 Recent Improvements**: The codebase has been completely refactored to follow n8n's best practices with improved modularity, comprehensive test coverage, and better maintainability. See the Architecture section for details on the new structure.
+
 ## 🎯 What's Included
 
-This package provides **three powerful custom nodes**:
+This package provides **four powerful custom nodes**:
 
-### 1. **Claude Agent** Node
-The main agent node that runs Claude AI agents with full tool support, memory, and output parsing capabilities.
+### 1. **Claude Agent** Node (v3)
+The main agent node that runs Claude AI agents with full tool support, memory, and output parsing capabilities. Features conditional UI that adapts based on whether used as a standalone node or as a tool.
 
-### 2. **Claude Agent Tool** Node
-Run Claude agents as reusable tools that can be connected to other AI nodes in your workflow.
+### 2. **Claude Agent Tool** Node (v1)
+Legacy version maintained for backward compatibility. For new workflows, prefer using the Claude Agent v3 node in tool mode.
 
 ### 3. **Run Container** Node
 Execute Docker containers with automatic image pulling, environment variable support, and clean output capture.
+
+### 4. **Run Container Tool** Node
+Run Docker containers as reusable tools that can be connected to AI nodes in your workflows.
 
 ## ✨ Key Features
 
@@ -167,9 +172,10 @@ services:
 ### Verification
 
 After installation and restart, you should see the following nodes available in the n8n node palette:
-- **Claude Agent**
-- **Claude Agent Tool**
-- **Run Container**
+- **Claude Agent** (v3) - Main node with dual-mode support
+- **Claude Agent Tool** (v1) - Legacy compatibility node
+- **Run Container** - Container execution node
+- **Run Container Tool** - Container tool node
 
 If the nodes don't appear, check:
 1. The package is installed in the correct directory
@@ -293,28 +299,85 @@ Common issues and solutions are documented in [TROUBLESHOOTING.md](./TROUBLESHOO
 
 ## 🏗️ Architecture
 
-### Node Structure
+### Modern Node Structure (Following n8n Best Practices)
 
-- **ClaudeAgent.node.ts**: Main agent execution node
-- **ClaudeAgentTool.node.ts**: Agent as a reusable tool
-- **RunContainer.node.ts**: Docker container execution
-- **ClaudeAgentExecute.ts**: Core agent execution logic
-- **McpToolAdapter.ts**: MCP server integration
-- **DebugLogger.ts**: Comprehensive logging system
+The codebase follows n8n's **Advanced Node Pattern** with modular organization:
 
-### Dependencies
+#### Claude Agent Nodes
+- **ClaudeAgent.node.ts** (v3) - Main node with version management and dual-mode support
+- **V1/ClaudeAgentTool.node.ts** - Legacy version for backward compatibility
+- **ClaudeAgentExecute.ts** - Shared execution logic for both node variants
+- **Description.ts** - Unified UI properties with conditional display options
+- **interfaces.ts** - Comprehensive TypeScript type definitions
+- **GenericFunctions.ts** - Shared validation and utility functions
+- **utils/** - Modular utilities organized by functionality:
+  - `debugLogger.ts` - Comprehensive logging with file output
+  - `memoryProcessor.ts` - AI Memory integration and context management
+  - `mcpAdapter.ts` - Model Context Protocol server integration
+  - `toolProcessor.ts` - n8n AI Tool processing and metadata extraction
+  - `promptBuilder.ts` - Prompt construction with memory context
+  - `outputFormatter.ts` - Result formatting and structured output
 
-- `@anthropic-ai/claude-agent-sdk`: Official Claude Agent SDK
-- `dockerode`: Robust Docker API client
-- `zod`: Schema validation
+#### RunContainer Nodes
+- **RunContainer.node.ts** - Main container execution node
+- **RunContainerTool.node.ts** - Container execution as a reusable tool
+- **ContainerHelpers.ts** - Core Docker operations and lifecycle management
+- **utils/** - Modular utilities:
+  - `socketDetector.ts` - Cross-platform Docker socket detection
+  - `commandParser.ts` - Shell command parsing and validation
+  - `logParser.ts` - Container output processing and formatting
+
+### Key Dependencies
+
+- **`@anthropic-ai/claude-agent-sdk`** - Official Claude Agent SDK for reliable agent execution
+- **`dockerode`** - Industry-standard Docker API client for container operations
+- **`zod`** - Runtime type validation and schema enforcement
+- **`@n8n/node-cli`** - n8n-specific build and development tooling
+
+### Testing Architecture
+
+Comprehensive test suite following n8n patterns:
+- **Unit Tests** - Individual utility function testing with proper mocking
+- **Integration Tests** - End-to-end node execution with mock external services
+- **Fixtures** - Reusable test data and mock responses
+- **Coverage** - High test coverage ensuring reliability and maintainability
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please see the [GitHub repository](https://github.com/darrengruber/n8n-nodes-claude-agent) for:
-- Issue reporting
-- Feature requests
-- Pull requests
-- Documentation improvements
+Contributions are welcome! This codebase follows established n8n patterns and maintains comprehensive test coverage.
+
+### Development Setup
+```bash
+# Clone and install dependencies
+git clone https://github.com/darrengruber/n8n-nodes-claude-agent.git
+cd n8n-nodes-claude-agent
+npm install
+
+# Run tests and linting
+npm test
+npm run lint
+
+# Build for development
+npm run build:watch
+```
+
+### Code Standards
+- Follow the **Advanced Node Pattern** outlined in `NODE_STRUCTURE_PATTERNS.md`
+- Maintain comprehensive test coverage for all new functionality
+- Use TypeScript interfaces defined in `interfaces.ts`
+- Organize utilities in the `utils/` directory with proper exports via `index.ts`
+- Include proper error handling with `NodeOperationError` and context preservation
+
+### Testing Requirements
+- Unit tests for all utility functions with proper mocking
+- Integration tests for node execution flows
+- Update fixtures when adding new test scenarios
+- Ensure all tests pass before submitting PRs
+
+See the [GitHub repository](https://github.com/darrengruber/n8n-nodes-claude-agent) for:
+- Issue reporting and feature requests
+- Pull request guidelines and code review process
+- Documentation improvements and examples
 
 ## 📄 License
 
