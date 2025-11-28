@@ -260,7 +260,7 @@ export const mockTestWorkflows = {
             {
                 parameters: {
                     image: 'python:3.11-alpine',
-                    command: 'python -c "import os; print(f\\"Hello {os.getenv(\\"NAME\\", \\"World\\\")}!\')",
+                    command: 'python -c "import os; print(f\\"Hello {os.getenv(\\"NAME\\", \\"World\\\")}!\\""',
                     sendEnv: true,
                     specifyEnv: 'keypair',
                     parametersEnv: {
