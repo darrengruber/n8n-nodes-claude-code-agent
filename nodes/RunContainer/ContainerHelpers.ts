@@ -190,7 +190,7 @@ export async function createContainer(
         AttachStdout: true,
         AttachStderr: true,
         HostConfig: {
-            AutoRemove: config.autoRemove !== false // Default to true
+            AutoRemove: false // Disable auto-remove to prevent 409 log errors
         }
     };
 
@@ -233,6 +233,7 @@ export async function startAndWaitForContainer(container: Docker.Container): Pro
  * @param container - Docker container instance
  * @returns Raw Docker logs buffer
  */
+
 export async function getContainerLogs(container: Docker.Container): Promise<Buffer> {
     try {
         // Try to get logs as a buffer (original approach)
@@ -300,20 +301,18 @@ export async function executeContainer(
         const waitResult = await startAndWaitForContainer(container);
         const exitCode = waitResult.StatusCode;
 
-        // Get container logs
+        // Get container logs - AutoRemove is disabled, so container still exists
         const logsBuffer = await getContainerLogs(container);
 
         // Parse and format results
         const parsedResult = parseContainerResult(logsBuffer, exitCode);
         return formatContainerResult(parsedResult);
     } finally {
-        // Clean up container if it wasn't auto-removed
-        if (config.autoRemove !== false) {
-            try {
-                await container.remove({ v: true });
-            } catch (error) {
-                // Ignore removal errors (container might already be removed)
-            }
+        // Clean up container manually since auto-remove is disabled
+        try {
+            await container.remove({ v: true });
+        } catch (error) {
+            // Ignore removal errors
         }
     }
 }
