@@ -1,0 +1,257 @@
+{
+  "name": "Run Container",
+  "group": ["transform"],
+  "version": 1,
+  "description": "Runs Docker containers with configurable images, commands, and environment variables",
+  "defaults": {
+    "name": "Run Container"
+  },
+  "inputs": ["main"],
+  "outputs": ["main"],
+  "properties": [
+    {
+      "displayName": "Socket Path",
+      "name": "socketPath",
+      "type": "string",
+      "default": "/var/run/docker.sock",
+      "description": "Path to the Docker socket. Auto-detects common paths for Docker Desktop, Colima, and other Docker installations",
+      "placeholder": "/var/run/docker.sock"
+    },
+    {
+      "displayName": "Tool Description",
+      "name": "toolDescription",
+      "type": "string",
+      "default": "Runs a Docker container with the specified image, entrypoint, and command. Automatically executes the container and returns stdout, stderr, and exit code. Use this tool whenever you need to run code, execute commands, or test something in an isolated Docker environment. Provide the image name (e.g., \"alpine:latest\", \"python:3.11\"), optionally an entrypoint (e.g., \"/bin/sh\", \"python\"), and the command arguments to pass to it.",
+      "description": "Explain to LLM what this tool does and when to use it",
+      "typeOptions": {
+        "rows": 3
+      },
+      "displayOptions": {
+        "show": {
+          "@tool": [true]
+        }
+      }
+    },
+    {
+      "displayName": "Docker Image",
+      "name": "image",
+      "type": "string",
+      "default": "",
+      "required": true,
+      "placeholder": "e.g., alpine:latest, python:3.11, node:20",
+      "description": "The Docker image to run. Examples: alpine:latest for minimal shell, python:3.11 for Python scripts, node:20 for JavaScript. The image will be automatically pulled if it does not exist locally.",
+      "validation": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*(?::[a-zA-Z0-9][a-zA-Z0-9._-]*)?(?:@[a-fA-F0-9]+)?$"
+      }
+    },
+    {
+      "displayName": "Entrypoint",
+      "name": "entrypoint",
+      "type": "string",
+      "default": "",
+      "placeholder": "e.g., /bin/sh, python, node",
+      "description": "Override the default entrypoint of the image. Leave empty to use the image default. This is the executable that will be run.",
+      "typeOptions": {
+        "rows": 1
+      }
+    },
+    {
+      "displayName": "Command",
+      "name": "command",
+      "type": "string",
+      "default": "",
+      "placeholder": "e.g., -c \"echo Hello World\", /app/script.py, --version",
+      "description": "The command arguments to pass to the entrypoint. This is what gets executed after the entrypoint. Supports quoted arguments and escaping.",
+      "typeOptions": {
+        "rows": 2
+      }
+    },
+    {
+      "displayName": "Send Environment Variables",
+      "name": "sendEnv",
+      "type": "boolean",
+      "default": false,
+      "noDataExpression": true,
+      "description": "Whether the container should have environment variables or not"
+    },
+    {
+      "displayName": "Specify Environment Variables",
+      "name": "specifyEnv",
+      "type": "options",
+      "displayOptions": {
+        "show": {
+          "sendEnv": [true]
+        }
+      },
+      "options": [
+        {
+          "name": "Using Fields Below",
+          "value": "keypair"
+        },
+        {
+          "name": "Using JSON",
+          "value": "json"
+        }
+      ],
+      "default": "keypair",
+      "description": "How to specify environment variables"
+    },
+    {
+      "displayName": "Environment Variables",
+      "name": "parametersEnv",
+      "type": "fixedCollection",
+      "typeOptions": {
+        "multipleValues": true
+      },
+      "placeholder": "Add Environment Variable",
+      "displayOptions": {
+        "show": {
+          "sendEnv": [true],
+          "specifyEnv": ["keypair"]
+        }
+      },
+      "default": {
+        "values": [
+          {
+            "name": "",
+            "value": ""
+          }
+        ]
+      },
+      "options": [
+        {
+          "name": "values",
+          "displayName": "Values",
+          "values": [
+            {
+              "displayName": "Key",
+              "name": "name",
+              "type": "string",
+              "default": "",
+              "description": "Environment variable name. Must start with letter or underscore and contain only letters, digits, and underscores.",
+              "validation": {
+                "type": "string",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+              }
+            },
+            {
+              "displayName": "Value",
+              "name": "value",
+              "type": "string",
+              "default": "",
+              "description": "Environment variable value",
+              "typeOptions": {
+                "password": false
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "displayName": "JSON",
+      "name": "jsonEnv",
+      "type": "json",
+      "displayOptions": {
+        "show": {
+          "sendEnv": [true],
+          "specifyEnv": ["json"]
+        }
+      },
+      "default": "",
+      "description": "Environment variables as JSON object. Example: {\"NODE_ENV\": \"production\", \"API_KEY\": \"secret\"}"
+    },
+    {
+      "displayName": "Model Input Description",
+      "name": "modelInputDescription",
+      "type": "string",
+      "default": "Environment variables as a JSON object. Provide all environment variables as key-value pairs.",
+      "description": "Explain to the LLM how it should generate the environment variables",
+      "typeOptions": {
+        "rows": 3
+      },
+      "displayOptions": {
+        "show": {
+          "sendEnv": [true],
+          "specifyEnv": ["model"]
+        }
+      }
+    }
+  ],
+  "credentials": [],
+  "icon": {
+    "light": "file:img/runContainer.svg",
+    "dark": "file:img/runContainer.dark.svg"
+  },
+  "documentation": {
+    "baseUrl": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.runcontainer/",
+    "examples": [
+      {
+        "name": "Run simple shell command",
+        "description": "Execute a basic shell command in an Alpine container",
+        "workflow": {
+          "nodes": [
+            {
+              "parameters": {
+                "image": "alpine:latest",
+                "command": "echo 'Hello from container!'"
+              },
+              "name": "Run Container",
+              "type": "n8n-nodes-base.runContainer",
+              "position": [240, 300]
+            }
+          ],
+          "connections": {}
+        }
+      },
+      {
+        "name": "Run Python script",
+        "description": "Execute a Python script with environment variables",
+        "workflow": {
+          "nodes": [
+            {
+              "parameters": {
+                "image": "python:3.11-alpine",
+                "command": "python -c \"import os; print(f'Hello {os.getenv(\\\"NAME\\\", \\\"World\\\")}!')\"",
+                "sendEnv": true,
+                "specifyEnv": "keypair",
+                "parametersEnv": {
+                  "values": [
+                    {
+                      "name": "NAME",
+                      "value": "Docker"
+                    }
+                  ]
+                }
+              },
+              "name": "Run Container",
+              "type": "n8n-nodes-base.runContainer",
+              "position": [240, 300]
+            }
+          ],
+          "connections": {}
+        }
+      }
+    ]
+  },
+  "action": "Runs Docker containers with comprehensive configuration options including image selection, command execution, environment variables, and automatic Docker socket detection. Supports both direct container execution and tool-based usage by AI agents.",
+  "webhooks": [],
+  "maxNodes": 10,
+  "color": "#2496ED",
+  "background": "white",
+  "capabilities": [
+    "tool",
+    "execute",
+    "environment",
+    "docker"
+  ],
+  "tags": [
+    "docker",
+    "container",
+    "execution",
+    "shell",
+    "environment",
+    "tool"
+  ]
+}
