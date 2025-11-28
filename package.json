@@ -34,7 +34,8 @@
         "nodes": [
             "dist/nodes/ClaudeAgent/ClaudeAgent.node.js",
             "dist/nodes/ClaudeAgent/ClaudeAgentTool.node.js",
-            "dist/nodes/RunContainer/RunContainer.node.js"
+            "dist/nodes/RunContainer/RunContainer.node.js",
+            "dist/nodes/RunContainer/RunContainerTool.node.js"
         ]
     },
     "devDependencies": {

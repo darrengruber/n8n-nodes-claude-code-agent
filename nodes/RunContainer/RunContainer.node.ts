@@ -135,7 +135,7 @@
       }
   }
   
-  async function runContainer(
+  export async function runContainer(
       socketPath: string,
       image: string,
       entrypoint: string,
