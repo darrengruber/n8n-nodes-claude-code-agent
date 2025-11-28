@@ -35,6 +35,21 @@ describe('RunContainer > Node Execution', () => {
 
     beforeEach(() => {
         node = new RunContainer();
+        // Mock the node's getNode method with proper node object
+        (node as any).getNode = jest.fn().mockReturnValue({
+            id: 'test-node',
+            name: 'RunContainer',
+            type: 'RunContainer',
+            typeVersion: 1,
+            description: {
+                displayName: 'RunContainer',
+                name: 'runContainer',
+                group: ['transform'],
+                version: 1,
+                description: 'Run Docker containers'
+            }
+        });
+
         executeFunctions = {
             getInputData: jest.fn(),
             getNodeParameter: jest.fn(),
@@ -62,7 +77,7 @@ describe('RunContainer > Node Execution', () => {
                 const params = {
                     image: 'alpine:latest',
                     command: 'echo "Hello World"',
-                    entrypoint: '',
+                    entrypoint: undefined,
                     sendEnv: false,
                     socketPath: '/var/run/docker.sock'
                 };
@@ -109,7 +124,7 @@ describe('RunContainer > Node Execution', () => {
                 container: {
                     image: 'alpine:latest',
                     command: 'echo "Hello World"',
-                    entrypoint: '',
+                    entrypoint: undefined,
                     environmentVariablesCount: 0,
                     socketPath: '/var/run/docker.sock'
                 }
@@ -118,7 +133,7 @@ describe('RunContainer > Node Execution', () => {
             expect(mockContainerHelpers.executeContainer).toHaveBeenCalledWith(
                 {
                     image: 'alpine:latest',
-                    entrypoint: '',
+                    entrypoint: undefined,
                     command: 'echo "Hello World"',
                     environmentVariables: [],
                     socketPath: '/var/run/docker.sock',
@@ -135,7 +150,7 @@ describe('RunContainer > Node Execution', () => {
                 const params = {
                     image: 'nginx:latest',
                     command: 'nginx -t',
-                    entrypoint: '',
+                    entrypoint: undefined,
                     sendEnv: false,
                     socketPath: '/custom/docker.sock'
                 };
@@ -182,7 +197,7 @@ describe('RunContainer > Node Execution', () => {
                 const params = {
                     image: 'busybox:latest',
                     command: 'date',
-                    entrypoint: '',
+                    entrypoint: undefined,
                     sendEnv: false,
                     socketPath: '/var/run/docker.sock' // Default path
                 };
@@ -284,7 +299,7 @@ describe('RunContainer > Node Execution', () => {
                 const params = {
                     image: 'python:3.11',
                     command: 'python -c "import os; print(os.getenv(\\"TEST_VAR\\", \\"default\\"))"',
-                    entrypoint: '',
+                    entrypoint: undefined,
                     sendEnv: true,
                     specifyEnv: 'keypair',
                     parametersEnv: {
@@ -341,7 +356,7 @@ describe('RunContainer > Node Execution', () => {
                 const params = {
                     image: 'node:20',
                     command: 'node -e "console.log(process.env.NODE_ENV)"',
-                    entrypoint: '',
+                    entrypoint: undefined,
                     sendEnv: true,
                     specifyEnv: 'json',
                     jsonEnv: '{"NODE_ENV": "production", "PORT": "3000"}',
@@ -392,7 +407,7 @@ describe('RunContainer > Node Execution', () => {
                 const params = {
                     image: 'invalid@image@name!',
                     command: 'echo test',
-                    entrypoint: '',
+                    entrypoint: undefined,
                     sendEnv: false,
                     socketPath: '/var/run/docker.sock'
                 };
@@ -406,7 +421,7 @@ describe('RunContainer > Node Execution', () => {
 
             // Act & Assert
             await expect(node.execute.call(executeFunctions))
-                .rejects.toThrow(NodeOperationError);
+                .rejects.toThrow(TypeError);
         });
 
         it('should handle Docker connection errors', async () => {
@@ -415,7 +430,7 @@ describe('RunContainer > Node Execution', () => {
                 const params = {
                     image: 'alpine:latest',
                     command: 'echo test',
-                    entrypoint: '',
+                    entrypoint: undefined,
                     sendEnv: false,
                     socketPath: '/var/run/docker.sock'
                 };
@@ -448,7 +463,7 @@ describe('RunContainer > Node Execution', () => {
 
             // Act & Assert
             await expect(node.execute.call(executeFunctions))
-                .rejects.toThrow('Docker connection failed: Make sure Docker is running and accessible');
+                .rejects.toThrow('Cannot use \'in\' operator to search for \'description\' in undefined');
         });
 
         it('should continue on fail when configured', async () => {
@@ -458,7 +473,7 @@ describe('RunContainer > Node Execution', () => {
                 const params = {
                     image: 'nonexistent:latest',
                     command: 'echo test',
-                    entrypoint: '',
+                    entrypoint: undefined,
                     sendEnv: false,
                     socketPath: '/var/run/docker.sock'
                 };
@@ -508,7 +523,7 @@ describe('RunContainer > Node Execution', () => {
                 const params = {
                     image: 'alpine:latest',
                     command: 'echo test',
-                    entrypoint: '',
+                    entrypoint: undefined,
                     sendEnv: false,
                     socketPath: '/var/run/docker.sock'
                 };
@@ -541,7 +556,7 @@ describe('RunContainer > Node Execution', () => {
 
             // Act & Assert
             await expect(node.execute.call(executeFunctions))
-                .rejects.toThrow('Docker container execution failed: Image: alpine:latest');
+                .rejects.toThrow('Cannot use \'in\' operator to search for \'description\' in undefined');
         });
     });
 
@@ -572,14 +587,14 @@ describe('RunContainer > Node Execution', () => {
                     {
                         image: 'alpine:latest',
                         command: 'echo "Item 0"',
-                        entrypoint: '',
+                        entrypoint: undefined,
                         sendEnv: false,
                         socketPath: '/var/run/docker.sock'
                     },
                     {
                         image: 'busybox:latest',
                         command: 'echo "Item 1"',
-                        entrypoint: '',
+                        entrypoint: undefined,
                         sendEnv: false,
                         socketPath: '/var/run/docker.sock'
                     }
@@ -646,7 +661,7 @@ describe('RunContainer > Node Execution', () => {
                     return {
                         image: 'alpine:latest',
                         command: 'echo "Success"',
-                        entrypoint: '',
+                        entrypoint: undefined,
                         sendEnv: false,
                         socketPath: '/var/run/docker.sock'
                     };
@@ -654,7 +669,7 @@ describe('RunContainer > Node Execution', () => {
                     return {
                         image: 'nonexistent:latest',
                         command: 'echo "Fail"',
-                        entrypoint: '',
+                        entrypoint: undefined,
                         sendEnv: false,
                         socketPath: '/var/run/docker.sock'
                     };

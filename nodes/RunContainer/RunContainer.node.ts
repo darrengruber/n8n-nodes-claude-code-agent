@@ -42,11 +42,9 @@ export class RunContainer implements INodeType {
                 // Get socket path with auto-detection
                 let socketPath = this.getNodeParameter('socketPath', itemIndex, '/var/run/docker.sock') as string;
 
-                // Auto-detect Docker socket if using default path
-                if (socketPath === '/var/run/docker.sock') {
-                    const socketDetection = detectDockerSocket();
-                    socketPath = socketDetection.path;
-                }
+                // Validate and auto-detect Docker socket
+                const socketDetection = detectDockerSocket(socketPath);
+                socketPath = socketDetection.path;
 
                 // Get container parameters
                 const image = this.getNodeParameter('image', itemIndex) as string;
@@ -141,7 +139,8 @@ export class RunContainer implements INodeType {
                         },
                     });
                 } else {
-                    throw new NodeOperationError(this.getNode(), errorMessage, {
+                    const node = this.getNode();
+                    throw new NodeOperationError(node || { id: 'unknown', description: { name: 'RunContainer' } }, errorMessage, {
                         itemIndex,
                     });
                 }
