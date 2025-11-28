@@ -312,18 +312,41 @@ export function validateDockerImageName(imageName: string): {
 
     const trimmedName = imageName.trim();
 
-    // Check for valid characters (basic validation)
-    if (!/^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$/i.test(trimmedName)) {
-        errors.push('Image name contains invalid characters');
+    // Parse the image name into components to validate separately
+    // Format: [registry/]repository[:tag][@digest]
+
+    // Extract digest if present (e.g., @sha256:abc123)
+    const digestMatch = trimmedName.match(/@(sha256:[a-f0-9]{64})$/);
+    let nameWithoutDigest = trimmedName;
+    if (digestMatch) {
+        nameWithoutDigest = trimmedName.substring(0, trimmedName.indexOf('@'));
     }
 
-    // Check if tag is valid (if present)
-    const tagMatch = trimmedName.match(/:([^:]+)$/);
+    // Extract tag if present (e.g., :latest, :1.0.0)
+    const tagMatch = nameWithoutDigest.match(/:([^:\/]+)$/);
+    let nameWithoutTag = nameWithoutDigest;
     if (tagMatch) {
         const tag = tagMatch[1];
-        if (!/^[a-zA-Z0-9._-]+$/.test(tag)) {
-            errors.push('Image tag contains invalid characters');
+        // Validate tag format (alphanumeric, dots, dashes, underscores, max 128 chars)
+        if (!/^[a-zA-Z0-9._-]{1,128}$/.test(tag)) {
+            errors.push('Image tag contains invalid characters or is too long');
         }
+        nameWithoutTag = nameWithoutDigest.substring(0, nameWithoutDigest.lastIndexOf(':'));
+    }
+
+    // Validate repository name (may include registry)
+    // Valid: ubuntu, library/ubuntu, gcr.io/project/image, localhost:5000/image
+    // Repository can have optional registry prefix with dots or localhost:port
+    if (nameWithoutTag) {
+        // Basic validation: alphanumeric, dots, slashes, dashes, underscores
+        // Allow registry domains (with dots) and ports
+        if (!/^[a-z0-9]+(([._-]|__|--)[a-z0-9]+)*(\/[a-z0-9]+(([._-]|__|--)[a-z0-9]+)*)*$/i.test(nameWithoutTag) &&
+            // Also allow registry with port (e.g., localhost:5000/image)
+            !/^[a-z0-9.-]+(:[0-9]+)?\//i.test(nameWithoutTag)) {
+            errors.push('Image name contains invalid characters');
+        }
+    } else {
+        errors.push('Image name is missing repository component');
     }
 
     return {
