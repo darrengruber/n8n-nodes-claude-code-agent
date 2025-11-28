@@ -21,12 +21,18 @@ export function parseCommand(cmd: string): string[] {
     while (i < cmd.length) {
         const char = cmd[i];
 
-        // Handle escaped characters (including escaped quotes)
+        // Handle escaped characters
         if (char === '\\' && i + 1 < cmd.length) {
             const nextChar = cmd[i + 1];
-            if (nextChar === '"' || nextChar === '\\') {
-                // Include the escaped character literally
-                current += nextChar;
+            // Handle common escape sequences
+            if (nextChar === '"' || nextChar === '\\' || nextChar === 'n' || nextChar === 't' || nextChar === '|') {
+                if (nextChar === 'n') {
+                    current += '\n';
+                } else if (nextChar === 't') {
+                    current += '\t';
+                } else {
+                    current += nextChar;
+                }
                 i += 2;
                 continue;
             }
@@ -42,7 +48,7 @@ export function parseCommand(cmd: string): string[] {
         // Handle space outside of quotes
         if (char === ' ' && !inQuotes) {
             if (current.trim()) {
-                parts.push(current.trim());
+                parts.push(current);
                 current = '';
             }
             i++;
@@ -56,7 +62,7 @@ export function parseCommand(cmd: string): string[] {
 
     // Add the last part if there's anything left
     if (current.trim()) {
-        parts.push(current.trim());
+        parts.push(current);
     }
 
     return parts;
@@ -69,7 +75,7 @@ export function parseCommand(cmd: string): string[] {
  * @returns Validated and sanitized arguments
  */
 export function validateCommandArgs(args: string[]): string[] {
-    return args.filter(arg => typeof arg === 'string' && arg.length > 0);
+    return args.filter(arg => typeof arg === 'string' && arg.length > 0 && arg.trim().length > 0);
 }
 
 /**
@@ -82,8 +88,8 @@ export function validateCommandArgs(args: string[]): string[] {
 export function buildCommandString(args: string[]): string {
     return args.map(arg => {
         // If argument contains spaces or special characters, quote it
-        if (arg.includes(' ') || arg.includes('"') || arg.includes('\\')) {
-            return `"${arg.replace(/"/g, '\\"').replace(/\\/g, '\\\\')}"`;
+        if (arg.includes(' ') || arg.includes('"') || arg.includes('*')) {
+            return `"${arg.replace(/"/g, '\\"')}"`;
         }
         return arg;
     }).join(' ');

@@ -107,7 +107,7 @@ describe('RunContainer > utils > logParser', () => {
         it('should handle large log entries', () => {
             const largeMessage = 'A'.repeat(1000);
             const logData = Buffer.concat([
-                Buffer.from([1, 0, 0, 0, 0, 3, 232, 4]), // Header: stdout, 1000 bytes (0x03E804)
+                Buffer.from([1, 0, 0, 0, 0, 0, 3, 232]), // Header: stdout, 1000 bytes (0x03E8)
                 Buffer.from(largeMessage) // Data
             ]);
 

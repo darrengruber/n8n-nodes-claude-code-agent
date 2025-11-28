@@ -75,7 +75,7 @@ export function parseDockerLogs(logsBuffer: Buffer): ParsedLogEntry[] {
 
         // Extract data
         const data = logsBuffer.slice(dataStart, dataEnd);
-        const text = data.toString('utf8');
+        const text = data.toString('utf8').replace(/\0/g, ''); // Remove all null characters
 
         entries.push({
             stream: streamType as LogStreamType,
@@ -203,13 +203,13 @@ export function parseContainerError(stderrText: string): {
     let errorCode: string | undefined;
 
     // Common Docker error patterns
-    if (errorMessage.includes('no such image')) {
+    if (errorMessage.toLowerCase().includes('no such image')) {
         errorType = 'IMAGE_NOT_FOUND';
-    } else if (errorMessage.includes('permission denied')) {
+    } else if (errorMessage.toLowerCase().includes('permission denied')) {
         errorType = 'PERMISSION_ERROR';
-    } else if (errorMessage.includes('command not found')) {
+    } else if (errorMessage.toLowerCase().includes('command not found')) {
         errorType = 'COMMAND_NOT_FOUND';
-    } else if (errorMessage.includes('exit code')) {
+    } else if (errorMessage.toLowerCase().includes('exit code')) {
         const match = errorMessage.match(/exit code (\d+)/);
         if (match) {
             errorCode = match[1];
@@ -247,7 +247,8 @@ export function sanitizeLogOutput(text: string): string {
             }
             return ''; // Remove other control characters
         })
-        .replace(/^\s+/, ''); // Only trim leading whitespace, preserve trailing
+        .replace(/^\s+/, '') // Only trim leading whitespace, preserve trailing
+        .replace(/\n$/, ''); // Remove final newline but preserve other trailing whitespace
 }
 
 /**
