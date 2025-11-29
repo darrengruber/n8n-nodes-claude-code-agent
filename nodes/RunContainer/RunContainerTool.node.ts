@@ -170,6 +170,13 @@ export class RunContainerTool implements INodeType {
                 // Import the executeContainerWithBinary function
                 const { executeContainerWithBinary } = require('./RunContainerLogic');
 
+                console.log(`[RunContainerTool] Calling executeContainerWithBinary with:`, {
+                    binaryDataInput,
+                    binaryDataOutput,
+                    outputDirectory,
+                    outputFilePattern
+                });
+
                 const result = await executeContainerWithBinary(this, itemIndex, {
                     image,
                     entrypoint,
