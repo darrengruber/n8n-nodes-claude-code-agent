@@ -383,6 +383,9 @@ File paths to use:
 
                 const result = await method(input);
 
+                console.log(`[MCPAdapter] Tool ${t.name} result type:`, typeof result);
+                console.log(`[MCPAdapter] Tool ${t.name} result:`, result);
+
                 if (verbose && logger) {
                     logger.log(`Tool ${t.name} result:`, result);
                 }
@@ -396,6 +399,13 @@ File paths to use:
                     const items = result; // Flattened array from n8n execution
                     const jsonOutputs: any[] = [];
 
+                    console.log(`[MCPAdapter] Processing ${items.length} items from tool result`);
+                    console.log(`[MCPAdapter] First item keys:`, Object.keys(items[0]));
+                    console.log(`[MCPAdapter] First item has binary:`, !!items[0].binary);
+                    if (items[0].binary) {
+                        console.log(`[MCPAdapter] Binary keys:`, Object.keys(items[0].binary));
+                    }
+
                     for (const item of items) {
                         if (item.json) {
                             jsonOutputs.push(item.json);
@@ -403,6 +413,7 @@ File paths to use:
 
                         // Check for binary data
                         if (item.binary && binaryArtifacts) {
+                            console.log(`[MCPAdapter] Found binary data in item, processing...`);
                             for (const [key, binaryData] of Object.entries(item.binary)) {
                                 if (binaryData && (binaryData as any).data) {
                                     const fileName = (binaryData as any).fileName || key;
