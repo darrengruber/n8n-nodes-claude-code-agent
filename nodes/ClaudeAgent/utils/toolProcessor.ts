@@ -38,6 +38,27 @@ export async function processConnectedTools(
             }
         }
 
+        // Enrich tools with current item's binary data for dynamic descriptions
+        const currentItem = context.getInputData()[itemIndex];
+        if (currentItem) {
+            tools.forEach(tool => {
+                if (!tool.metadata) {
+                    tool.metadata = {};
+                }
+                tool.metadata.currentItem = currentItem;
+
+                // For RunContainer tools, try to get the workspaceInstructions parameter
+                // This is a bit tricky since we don't have direct access to the tool node's parameters
+                // The tool object might have a reference to its configuration
+                // For now, we'll rely on the fallback in mcpAdapter
+            });
+
+            logger.log('Enriched tools with current item data', {
+                hasBinaryData: !!currentItem.binary,
+                binaryKeys: currentItem.binary ? Object.keys(currentItem.binary) : []
+            });
+        }
+
         const result = await processToolsForAgent(tools, { verbose }, logger, binaryArtifacts);
         mcpServers = result.mcpServers;
         disallowedTools = result.disallowedTools;

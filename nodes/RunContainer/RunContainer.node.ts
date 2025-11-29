@@ -54,8 +54,13 @@ export class RunContainer implements INodeType {
                     { mappings: [] },
                 ) as { mappings: Array<{ binaryPropertyName: string; containerPath: string }> };
 
-                // Get output file pattern
+                // Get output file pattern and directory
                 const outputFilePattern = this.getNodeParameter('outputFilePattern', itemIndex, '*') as string;
+                const outputDirectory = this.getNodeParameter('outputDirectory', itemIndex, '/agent/workspace/output') as string;
+
+                // Get workspace and binary input paths
+                const workspaceMountPath = this.getNodeParameter('workspaceMountPath', itemIndex, '/agent/workspace') as string;
+                const binaryInputPath = this.getNodeParameter('binaryInputPath', itemIndex, '/agent/workspace/input') as string;
 
                 // Execute container using shared logic
                 const result = await executeContainerWithBinary(this, itemIndex, {
@@ -68,6 +73,9 @@ export class RunContainer implements INodeType {
                     binaryDataOutput,
                     binaryFileMappings,
                     outputFilePattern,
+                    workspaceMountPath,
+                    binaryInputPath,
+                    outputDirectory,
                 });
 
                 returnData.push(result);

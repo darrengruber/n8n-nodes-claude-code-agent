@@ -170,14 +170,15 @@ export const mainProperties: INodeProperties[] = [
         placeholder: 'Add Binary File',
         displayOptions: {
             show: {
-                binaryDataInput: [true],
+                // Hidden - we now use automatic mode
+                '@version': [999],
             },
         },
         default: {
             mappings: [
                 {
                     binaryPropertyName: 'data',
-                    containerPath: '/input/file',
+                    containerPath: '/agent/workspace/input/file',
                 },
             ],
         },
@@ -199,10 +200,10 @@ export const mainProperties: INodeProperties[] = [
                         displayName: 'Container Path',
                         name: 'containerPath',
                         type: 'string',
-                        default: '/input/file',
+                        default: '/agent/workspace/input/file',
                         required: true,
                         description: 'Path where the file will be available inside the container',
-                        placeholder: '/input/image.png',
+                        placeholder: '/agent/workspace/input/image.png',
                     },
                 ],
             },
@@ -220,14 +221,14 @@ export const mainProperties: INodeProperties[] = [
         displayName: 'Output Directory',
         name: 'outputDirectory',
         type: 'string',
-        default: '/output',
+        default: '/agent/workspace/output',
         displayOptions: {
             show: {
                 binaryDataOutput: [true],
             },
         },
         description: 'Directory inside the container where output files will be collected from',
-        placeholder: '/output',
+        placeholder: '/agent/workspace/output',
     },
     {
         displayName: 'Output File Pattern',

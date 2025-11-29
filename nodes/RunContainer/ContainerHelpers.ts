@@ -465,3 +465,108 @@ export async function getContainerStats(container: Docker.Container): Promise<{
         };
     }
 }
+
+/**
+ * Ensure a Docker volume exists
+ *
+ * @param docker - Docker client instance
+ * @param volumeName - Name of the volume
+ * @returns Promise that resolves when volume is ready
+ */
+export async function ensureVolume(docker: Docker, volumeName: string): Promise<void> {
+    try {
+        const volume = docker.getVolume(volumeName);
+        await volume.inspect();
+    } catch (error) {
+        // Volume doesn't exist, create it
+        await docker.createVolume({
+            Name: volumeName,
+            Labels: {
+                'managed-by': 'n8n-run-container',
+            },
+        });
+    }
+}
+
+/**
+ * Remove a Docker volume
+ *
+ * @param docker - Docker client instance
+ * @param volumeName - Name of the volume
+ * @returns Promise that resolves when volume is removed
+ */
+export async function removeVolume(docker: Docker, volumeName: string): Promise<void> {
+    try {
+        const volume = docker.getVolume(volumeName);
+        await volume.remove();
+    } catch (error) {
+        // Ignore if volume doesn't exist
+    }
+}
+
+/**
+ * Copy files from container to host directory
+ *
+ * @param container - Docker container instance
+ * @param containerPath - Path in container to copy from
+ * @param hostPath - Path on host to copy to
+ * @returns Promise that resolves when copy is complete
+ */
+export async function copyFilesFromContainer(
+    container: Docker.Container,
+    containerPath: string,
+    hostPath: string
+): Promise<void> {
+    try {
+        const tarStream = await container.getArchive({ path: containerPath });
+
+        // We need to extract the tar stream to the host path
+        // Since we can't easily use tar in this environment without adding dependencies,
+        // we'll use a simpler approach: use 'docker cp' command if available, 
+        // or rely on the fact that we might be running in a node environment where we can use 'tar-fs' or similar if installed.
+        // But we don't want to add dependencies if possible.
+
+        // Alternative: Use 'docker cp' via exec if we are on the host?
+        // But we are using dockerode.
+
+        // Let's use the 'tar' package if available, or just stream it to a file?
+        // No, we need to extract it.
+
+        // Actually, since we are in n8n, we might not have 'tar' npm package.
+        // Let's try to use the docker CLI 'cp' command as a fallback if we can't handle the stream easily.
+        // But we should try to use the stream.
+
+        // For now, let's assume we can use the 'tar' command line tool if available on the system.
+        const fs = require('fs');
+        const path = require('path');
+        const child_process = require('child_process');
+
+        // Create a temporary tar file
+        const tempTarFile = path.join(hostPath, `extract-${Date.now()}.tar`);
+        const fileStream = fs.createWriteStream(tempTarFile);
+
+        await new Promise((resolve, reject) => {
+            tarStream.pipe(fileStream);
+            tarStream.on('end', resolve);
+            tarStream.on('error', reject);
+            fileStream.on('error', reject);
+        });
+
+        // Extract using tar command
+        try {
+            child_process.execSync(`tar -xf "${tempTarFile}" -C "${hostPath}"`);
+        } catch (error) {
+            // If tar fails (e.g. windows), we might need another way.
+            // But for now, assuming Linux/Mac environment for n8n.
+            console.error('Failed to extract tar:', error);
+        } finally {
+            // Cleanup tar file
+            if (fs.existsSync(tempTarFile)) {
+                fs.unlinkSync(tempTarFile);
+            }
+        }
+
+    } catch (error) {
+        throw new Error(`Failed to copy files from container: ${error.message}`);
+    }
+}

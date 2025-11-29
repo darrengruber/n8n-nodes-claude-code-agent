@@ -80,6 +80,73 @@ export async function prepareBinaryInput(
 }
 
 /**
+ * Prepare binary files for container input (automatic mode)
+ * Extracts ALL binary data from n8n item and writes to temporary input directory
+ *
+ * @param context - n8n execution context
+ * @param itemIndex - Current item index
+ * @returns Prepared input with temp directory and file information
+ */
+export async function prepareBinaryInputAuto(
+    context: IExecuteFunctions,
+    itemIndex: number,
+): Promise<{
+    tempDir: string;
+    inputDir: string;
+    fileSizes: number[];
+    fileNames: string[];
+}> {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'n8n-docker-binary-'));
+    const fileSizes: number[] = [];
+    const fileNames: string[] = [];
+
+    try {
+        // Create input directory
+        const inputDir = path.join(tempDir, 'input');
+        await fs.mkdir(inputDir, { recursive: true });
+
+        // Get all binary data from the item
+        const items = context.getInputData();
+        const item = items[itemIndex];
+
+        if (!item.binary) {
+            // No binary data, but that's okay - return empty result
+            return { tempDir, inputDir, fileSizes, fileNames };
+        }
+
+        // Iterate through all binary properties
+        for (const [propertyName, binaryData] of Object.entries(item.binary)) {
+            try {
+                // Get the binary buffer
+                const buffer = await context.helpers.getBinaryDataBuffer(
+                    itemIndex,
+                    propertyName,
+                );
+
+                // Determine filename
+                const fileName = binaryData.fileName || `${propertyName}.bin`;
+                const filePath = path.join(inputDir, fileName);
+
+                // Write binary data to file
+                await fs.writeFile(filePath, buffer);
+
+                fileSizes.push(buffer.length);
+                fileNames.push(fileName);
+            } catch (error) {
+                console.error(`Failed to process binary property ${propertyName}:`, error);
+                // Continue with other files even if one fails
+            }
+        }
+
+        return { tempDir, inputDir, fileSizes, fileNames };
+    } catch (error) {
+        // Cleanup on failure
+        await cleanupTempDirectory(tempDir);
+        throw error;
+    }
+}
+
+/**
  * Collect binary output files from container execution
  * Scans output directory and prepares binary data for n8n
  *

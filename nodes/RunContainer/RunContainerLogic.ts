@@ -8,10 +8,15 @@ import {
     formatDockerError,
     isDockerConnectionError
 } from './GenericFunctions';
-import { executeContainer, ContainerExecutionConfig } from './ContainerHelpers';
+import {
+    executeContainer,
+    ContainerExecutionConfig,
+    initializeDockerClient,
+    ensureVolume
+} from './ContainerHelpers';
 import { detectDockerSocket } from './utils/socketDetector';
 import {
-    prepareBinaryInput,
+    prepareBinaryInputAuto,
     collectBinaryOutput,
     calculateResourceLimits,
     cleanupTempDirectory,
@@ -28,6 +33,9 @@ export interface RunContainerParams {
     binaryDataOutput: boolean;
     binaryFileMappings: { mappings: Array<{ binaryPropertyName: string; containerPath: string }> };
     outputFilePattern: string;
+    workspaceMountPath: string;
+    binaryInputPath: string;
+    outputDirectory?: string;
 }
 
 export async function executeContainerWithBinary(
@@ -62,48 +70,49 @@ export async function executeContainerWithBinary(
             socketPath,
             autoRemove: true,
             pullPolicy: 'missing', // Only pull if image doesn't exist locally
+            volumes: [],
         };
+
+        // Ensure workspace volume exists and mount it
+        const executionId = context.getExecutionId();
+        const volumeName = `n8n-vol-${executionId}`;
+        const docker = initializeDockerClient(socketPath);
+        await ensureVolume(docker, volumeName);
+        containerConfig.volumes?.push(`${volumeName}:${params.workspaceMountPath}:rw`);
 
         // Prepare binary input if enabled
         if (params.binaryDataInput) {
-            if (params.binaryFileMappings.mappings && params.binaryFileMappings.mappings.length > 0) {
-                const preparedBinary = await prepareBinaryInput(
-                    context,
-                    itemIndex,
-                    params.binaryFileMappings.mappings,
-                );
-                tempDir = preparedBinary.tempDir;
-                tempDirectories.push(tempDir);
+            // Use automatic mode: extract all binary data and place in input directory
+            const preparedBinary = await prepareBinaryInputAuto(
+                context,
+                itemIndex,
+            );
+            tempDir = preparedBinary.tempDir;
+            tempDirectories.push(tempDir);
 
-                // Build volume mounts (read-only for inputs)
-                const volumes = preparedBinary.mountPoints.map(
-                    (mp: { hostPath: string; containerPath: string }) =>
-                        `${mp.hostPath}:${mp.containerPath}:ro`,
-                );
+            // Mount the entire input directory to binaryInputPath
+            const inputDir = preparedBinary.inputDir;
+            containerConfig.volumes = [
+                ...(containerConfig.volumes || []),
+                `${inputDir}:${params.binaryInputPath}:ro`
+            ];
 
-                // Create output directory if binary output is enabled
-                if (params.binaryDataOutput) {
-                    await createOutputDirectory(tempDir);
-                    volumes.push(`${tempDir}/output:/output:rw`);
-                }
-
-                containerConfig.volumes = volumes;
-
-                // Calculate resource limits based on file sizes
+            // Calculate resource limits based on file sizes
+            if (preparedBinary.fileSizes.length > 0) {
                 const resourceLimits = calculateResourceLimits(preparedBinary.fileSizes);
                 containerConfig.memory = resourceLimits.memory;
                 containerConfig.cpuQuota = resourceLimits.cpuQuota;
             }
         } else if (params.binaryDataOutput) {
-            // Binary output without input - create temp dir and output directory
+            // Binary output without input - create temp dir for extraction later
             const fs = await import('fs/promises');
             const path = await import('path');
             const os = await import('os');
             tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'n8n-docker-output-'));
             tempDirectories.push(tempDir);
 
+            // We don't mount this temp dir anymore for output, we use it for extraction
             await createOutputDirectory(tempDir);
-            containerConfig.volumes = [`${tempDir}/output:/output:rw`];
         }
 
         // Execute container
@@ -139,6 +148,65 @@ export async function executeContainerWithBinary(
 
         // Collect binary output if enabled
         if (params.binaryDataOutput && tempDir) {
+            // We need to copy files from the container to the temp dir
+            // The container is still alive (autoRemove: false)
+            // We copy from workspaceMountPath (or root?)
+            // If the user specified a pattern like "*.png", we need to find those files.
+            // Our copyFilesFromContainer uses 'docker cp' which takes a path.
+            // If we want to support patterns, we might need to be smarter.
+            // For now, let's assume we copy the entire workspace content or specific files?
+            // The user said "extract the binary data".
+
+            // Let's try to copy from workspaceMountPath.
+            // But we need to put it in tempDir/output for collectBinaryOutput to work.
+            const outputDir = `${tempDir}/output`;
+
+            // We use the container instance from the result? 
+            // Wait, executeContainer returns result but cleans up container if we are not careful.
+            // In executeContainer, we have:
+            // finally { await container.remove() }
+            // So the container is GONE by now.
+
+            // We need to modify executeContainer to NOT remove the container if we need to extract files?
+            // Or we extract files inside executeContainer?
+            // executeContainer is in ContainerHelpers.ts.
+
+            // Actually, we can't extract here if the container is gone.
+            // We need to change the architecture slightly.
+            // But wait, the workspace volume PERSISTS.
+            // So we can extract from the volume!
+            // But we can't easily extract from a volume without a container.
+
+            // So we should probably mount a helper container to extract?
+            // Or, we can modify executeContainer to allow a callback before removal?
+            // Or we can just use the volume.
+
+            // If we use the volume, we can mount it to a temporary helper container and copy files out.
+            // That seems robust.
+
+            // Helper container to extract files
+            // We copy from the configured output directory inside the workspace
+            // If outputDirectory is absolute, we assume it's inside the workspace or we mount it?
+            // But we only mount the workspace volume.
+            // So the agent must write to the workspace volume.
+            // The outputDirectory param is "Directory inside the container where output files will be collected from".
+            // If the user sets it to "/agent/workspace/output", then we should copy from there.
+
+            const sourcePath = params.outputDirectory || `${params.workspaceMountPath}/output`;
+
+            const helperConfig: ContainerExecutionConfig = {
+                image: 'alpine:latest',
+                command: `sh -c "cp -r ${sourcePath}/* /output/ 2>/dev/null || true"`,
+                volumes: [
+                    `${volumeName}:${params.workspaceMountPath}:ro`,
+                    `${outputDir}:/output:rw`
+                ],
+                autoRemove: true
+            };
+
+            await executeContainer(helperConfig);
+
+            // Now files are in outputDir, collect them
             const outputBinary = await collectBinaryOutput(context, tempDir, params.outputFilePattern);
 
             if (Object.keys(outputBinary).length > 0) {

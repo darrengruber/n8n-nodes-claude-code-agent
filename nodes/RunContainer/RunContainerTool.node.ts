@@ -162,6 +162,10 @@ export class RunContainerTool implements INodeType {
                 }
 
                 const outputFilePattern = toolArgs.outputFilePattern || this.getNodeParameter('outputFilePattern', itemIndex, '*') as string;
+                const outputDirectory = toolArgs.outputDirectory || this.getNodeParameter('outputDirectory', itemIndex, '/agent/workspace/output') as string;
+
+                const workspaceMountPath = toolArgs.workspaceMountPath || this.getNodeParameter('workspaceMountPath', itemIndex, '/agent/workspace') as string;
+                const binaryInputPath = toolArgs.binaryInputPath || this.getNodeParameter('binaryInputPath', itemIndex, '/agent/workspace/input') as string;
 
                 // Import the executeContainerWithBinary function
                 const { executeContainerWithBinary } = require('./RunContainerLogic');
@@ -176,6 +180,9 @@ export class RunContainerTool implements INodeType {
                     binaryDataOutput,
                     binaryFileMappings,
                     outputFilePattern,
+                    workspaceMountPath,
+                    binaryInputPath,
+                    outputDirectory,
                 });
 
                 returnData.push(result);

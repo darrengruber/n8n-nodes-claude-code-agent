@@ -59,13 +59,18 @@ describe('RunContainer > Node Execution', () => {
             helpers: {
                 request: jest.fn(),
                 prepareBinaryData: jest.fn(),
-            }
+            },
+            getExecutionId: jest.fn().mockReturnValue('test-execution-id'),
         } as any;
 
         // Default mock implementations
         executeFunctions.getInputData.mockReturnValue([{ json: {} }]);
         executeFunctions.continueOnFail.mockReturnValue(false);
         executeFunctions.getNode.mockReturnValue({ id: 'test-node' });
+
+        // Mock new helper functions
+        mockContainerHelpers.initializeDockerClient = jest.fn().mockReturnValue({});
+        mockContainerHelpers.ensureVolume = jest.fn().mockResolvedValue(undefined);
 
         jest.clearAllMocks();
     });
@@ -79,7 +84,9 @@ describe('RunContainer > Node Execution', () => {
                     command: 'echo "Hello World"',
                     entrypoint: undefined,
                     sendEnv: false,
-                    socketPath: '/var/run/docker.sock'
+                    socketPath: '/var/run/docker.sock',
+                    workspaceMountPath: '/agent/workspace',
+                    binaryInputPath: '/agent/workspace/input'
                 };
                 return params[param];
             });
@@ -138,7 +145,8 @@ describe('RunContainer > Node Execution', () => {
                     environmentVariables: [],
                     socketPath: '/var/run/docker.sock',
                     autoRemove: true,
-                    pullPolicy: 'missing'
+                    pullPolicy: 'missing',
+                    volumes: ['n8n-vol-test-execution-id:/agent/workspace:rw']
                 },
                 expect.any(Function)
             );
@@ -656,24 +664,34 @@ describe('RunContainer > Node Execution', () => {
                 { json: {} }
             ]);
 
-            executeFunctions.getNodeParameter.mockImplementation((param: any, index) => {
-                if (index === 0) {
-                    return {
+            executeFunctions.getNodeParameter.mockImplementation((param: any, index: number) => {
+                const params = [
+                    {
                         image: 'alpine:latest',
                         command: 'echo "Success"',
                         entrypoint: undefined,
                         sendEnv: false,
-                        socketPath: '/var/run/docker.sock'
-                    };
-                } else {
-                    return {
+                        socketPath: '/var/run/docker.sock',
+                        workspaceMountPath: '/agent/workspace',
+                        binaryInputPath: '/agent/workspace/input',
+                        outputDirectory: '/agent/workspace/output',
+                        binaryDataInput: false,
+                        binaryDataOutput: false
+                    },
+                    {
                         image: 'nonexistent:latest',
                         command: 'echo "Fail"',
                         entrypoint: undefined,
                         sendEnv: false,
-                        socketPath: '/var/run/docker.sock'
-                    };
-                }
+                        socketPath: '/var/run/docker.sock',
+                        workspaceMountPath: '/agent/workspace',
+                        binaryInputPath: '/agent/workspace/input',
+                        outputDirectory: '/agent/workspace/output',
+                        binaryDataInput: false,
+                        binaryDataOutput: false
+                    }
+                ];
+                return params[index]?.[param];
             });
 
             mockSocketDetector.detectDockerSocket.mockReturnValue({
@@ -770,8 +788,11 @@ describe('RunContainer > Node Execution', () => {
                     binaryDataInput: true,
                     binaryDataOutput: false,
                     binaryFileMappings: {
-                        mappings: [{ binaryPropertyName: 'data', containerPath: '/input/test.png' }],
+                        mappings: [],  // No longer required - automatic mode
                     },
+                    workspaceMountPath: '/agent/workspace',
+                    binaryInputPath: '/agent/workspace/input',
+                    outputDirectory: '/agent/workspace/output'
                 };
                 return params[param];
             });
@@ -1054,8 +1075,11 @@ describe('RunContainer > Node Execution', () => {
                     socketPath: '/var/run/docker.sock',
                     binaryDataInput: false,
                     binaryDataOutput: true,
+                    binaryFileMappings: { mappings: [] },
                     outputFilePattern: '*',
                     outputDirectory: '/output',
+                    workspaceMountPath: '/agent/workspace',
+                    binaryInputPath: '/agent/workspace/input'
                 };
                 return params[param];
             });
@@ -1104,11 +1128,30 @@ describe('RunContainer > Node Execution', () => {
             expect(result[0][0].json.container.binaryInput).toBe(false);
             expect(result[0][0].json.container.binaryOutput).toBe(true);
             // Should still create an output directory volume
-            expect(mockContainerHelpers.executeContainer).toHaveBeenCalledWith(
+            // Should call executeContainer twice: once for main task, once for extraction
+            expect(mockContainerHelpers.executeContainer).toHaveBeenCalledTimes(2);
+
+            // First call (Main Container) should have workspace volume
+            expect(mockContainerHelpers.executeContainer).toHaveBeenNthCalledWith(
+                1,
                 expect.objectContaining({
-                    volumes: expect.arrayContaining([expect.stringMatching(/\/output:rw$/)]),
+                    image: 'alpine:latest',
+                    volumes: expect.arrayContaining([expect.stringMatching(/n8n-vol-.*:\/agent\/workspace:rw/)]),
                 }),
-                expect.any(Function),
+                expect.any(Function)
+            );
+
+            // Second call (Helper Container) should have output volume
+            expect(mockContainerHelpers.executeContainer).toHaveBeenNthCalledWith(
+                2,
+                expect.objectContaining({
+                    image: 'alpine:latest', // Helper also uses alpine
+                    command: expect.stringContaining('cp -r /output/* /output/'), // Default output dir is /output in this test setup
+                    volumes: expect.arrayContaining([
+                        expect.stringMatching(/\/output:rw$/),
+                        expect.stringMatching(/n8n-vol-.*:\/agent\/workspace:ro/)
+                    ]),
+                })
             );
         });
     });

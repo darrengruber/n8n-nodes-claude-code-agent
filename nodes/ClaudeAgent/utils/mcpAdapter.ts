@@ -299,7 +299,42 @@ export async function adaptToMcpTools(
             logger.log(`Extracted schema for ${t.name} using pipeline`);
         }
 
-        return tool(t.name, t.description, schemaShape, async (args) => {
+        // Enhance description for RunContainer tools
+        let enhancedDescription = t.description;
+        const nodeType = t.metadata?.nodeType || t.nodeType || '';
+        const isRunContainer = nodeType.toLowerCase().includes('runcontainer');
+
+        if (isRunContainer && logger) {
+            logger.log(`Detected RunContainer tool: ${t.name}, enhancing description`);
+
+            // Build workspace instructions with default paths
+            // Note: If users change workspaceMountPath, binaryInputPath, or outputDirectory,
+            // they should update the tool description accordingly
+            const workspaceInstructions = '\n\nWorkspace: A persistent volume is mounted at /agent/workspace. Use this directory to persist files between turns.';
+            enhancedDescription += workspaceInstructions;
+
+            // Check for binary data and list input files
+            if (t.metadata?.currentItem?.binary) {
+                const binaryData = t.metadata.currentItem.binary;
+                const fileNames = Object.entries(binaryData).map(([key, data]: [string, any]) => {
+                    return data.fileName || key;
+                });
+
+                if (fileNames.length > 0) {
+                    enhancedDescription += `\n\nInput Files: The following files are available in /agent/workspace/input:\n${fileNames.map(f => `  - ${f}`).join('\n')}`;
+                    logger.log(`Listed ${fileNames.length} input files in description`);
+                }
+            } else {
+                // No binary data, just mention where inputs would be
+                enhancedDescription += '\n\nIf binary input is enabled, input files will be available in /agent/workspace/input.';
+            }
+
+            // Add output instructions
+            enhancedDescription += '\n\nOutput Files: Place any files you want to return in /agent/workspace/output.';
+        }
+
+
+        return tool(t.name, enhancedDescription, schemaShape, async (args) => {
             try {
                 // Try to use invoke if available (newer LangChain), fallback to call
                 // invoke() handles input unification (e.g. string vs object) better than call()
