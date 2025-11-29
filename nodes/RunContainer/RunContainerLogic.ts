@@ -107,14 +107,17 @@ export async function executeContainerWithBinary(
             }
         } else if (params.binaryDataOutput) {
             // Binary output without input - create temp dir for extraction later
+            console.log(`[BinaryOutput] Creating temp directory for binary collection...`);
             const fs = await import('fs/promises');
             const path = await import('path');
             const os = await import('os');
             tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'n8n-docker-output-'));
             tempDirectories.push(tempDir);
+            console.log(`[BinaryOutput] Created temp directory: ${tempDir}`);
 
             // We don't mount this temp dir anymore for output, we use it for extraction
             await createOutputDirectory(tempDir);
+            console.log(`[BinaryOutput] Output directory created in temp dir`);
         }
 
         // Execute container
@@ -149,7 +152,9 @@ export async function executeContainerWithBinary(
         };
 
         // Collect binary output if enabled
+        console.log(`[BinaryCollectionCheck] binaryDataOutput: ${params.binaryDataOutput}, tempDir: ${!!tempDir}`);
         if (params.binaryDataOutput && tempDir) {
+            console.log(`[BinaryOutput] Starting binary collection process...`);
             // We need to copy files from the container to the temp dir
             // The container is still alive (autoRemove: false)
             // We copy from workspaceMountPath (or root?)
