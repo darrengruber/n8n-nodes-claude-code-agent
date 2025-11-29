@@ -2,6 +2,51 @@ import { tool, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { DebugLogger } from './DebugLogger';
 
+type ToolGrouping = {
+    bySource: Record<string, any[]>;
+    hasExecuteCommandNode: boolean;
+    hasHttpRequestNode: boolean;
+    mcpClients: any[];
+};
+
+type NativeToolPolicy = {
+    allowedTools: string[];
+    disallowedTools: string[];
+};
+
+type NativeToolRule = {
+    name: string;
+    requiresExecuteCommand?: boolean;
+    requiresHttpRequest?: boolean;
+};
+
+const CORE_NATIVE_TOOLS: NativeToolRule[] = [
+    { name: 'Agent' },
+    { name: 'AskUserQuestion' },
+    { name: 'ListMcpResources' },
+    { name: 'ReadMcpResource' },
+    { name: 'Mcp' },
+    { name: 'WebSearch' },
+];
+
+const SHELL_AND_FS_TOOLS: NativeToolRule[] = [
+    { name: 'Bash', requiresExecuteCommand: true },
+    { name: 'BashOutput', requiresExecuteCommand: true },
+    { name: 'FileEdit', requiresExecuteCommand: true },
+    { name: 'FileRead', requiresExecuteCommand: true },
+    { name: 'FileWrite', requiresExecuteCommand: true },
+    { name: 'Glob', requiresExecuteCommand: true },
+    { name: 'Grep', requiresExecuteCommand: true },
+    { name: 'KillShell', requiresExecuteCommand: true },
+    { name: 'NotebookEdit', requiresExecuteCommand: true },
+];
+
+const NETWORK_TOOLS: NativeToolRule[] = [
+    { name: 'WebFetch', requiresHttpRequest: true },
+];
+
+const EXPLICIT_DENYLIST = ['ExitPlanMode', 'TimeMachine', 'TodoWrite'];
+
 // Manual schema definitions for common n8n tools that might not have proper schema.shape
 const TOOL_SCHEMAS: Record<string, any> = {
     'Calculator': {
@@ -51,125 +96,159 @@ function getActiveExtractors(): SchemaExtractor[] {
     });
 }
 
+function sanitizeServerName(name: string): string {
+    return (name || 'n8n-tools').replace(/[^a-zA-Z0-9_]/g, '_');
+}
+
+function groupTools(tools: any[]): ToolGrouping {
+    const bySource: Record<string, any[]> = {};
+    const mcpClients: any[] = [];
+    let hasExecuteCommandNode = false;
+    let hasHttpRequestNode = false;
+
+    for (const toolItem of tools) {
+        if (isMcpClient(toolItem)) {
+            mcpClients.push(toolItem);
+            continue;
+        }
+
+        const sourceName = toolItem.metadata?.sourceNodeName || 'n8n-tools';
+        if (!bySource[sourceName]) {
+            bySource[sourceName] = [];
+        }
+
+        const nodeType = toolItem.metadata?.nodeType || toolItem.nodeType || '';
+        const normalizedNodeType = nodeType.toLowerCase();
+        hasExecuteCommandNode ||= normalizedNodeType.includes('executecommand') || toolItem.name?.toLowerCase().includes('execute_command');
+        hasHttpRequestNode ||= normalizedNodeType.includes('httprequest') || toolItem.name?.toLowerCase().includes('http_request');
+
+        bySource[sourceName].push(toolItem);
+    }
+
+    return {
+        bySource,
+        hasExecuteCommandNode,
+        hasHttpRequestNode,
+        mcpClients,
+    };
+}
+
+function computeAllowedFromRules(rules: NativeToolRule[], grouping: ToolGrouping): {
+    allowed: string[];
+    disallowed: string[];
+} {
+    const allowed: string[] = [];
+    const disallowed: string[] = [];
+
+    for (const rule of rules) {
+        const needsExecuteCommand = rule.requiresExecuteCommand && !grouping.hasExecuteCommandNode;
+        const needsHttpRequest = rule.requiresHttpRequest && !grouping.hasHttpRequestNode;
+
+        if (needsExecuteCommand || needsHttpRequest) {
+            disallowed.push(rule.name);
+        } else {
+            allowed.push(rule.name);
+        }
+    }
+
+    return { allowed, disallowed };
+}
+
+export function buildNativeToolPolicy(grouping: ToolGrouping, logger?: DebugLogger): NativeToolPolicy {
+    const allowed: string[] = [];
+    const disallowed: string[] = [];
+
+    const ruleGroups = [CORE_NATIVE_TOOLS, SHELL_AND_FS_TOOLS, NETWORK_TOOLS];
+    for (const group of ruleGroups) {
+        const { allowed: groupAllowed, disallowed: groupDisallowed } = computeAllowedFromRules(group, grouping);
+        allowed.push(...groupAllowed);
+        disallowed.push(...groupDisallowed);
+    }
+
+    disallowed.push(...EXPLICIT_DENYLIST);
+
+    if (logger) {
+        logger.log('Native tool policy computed', {
+            allowed,
+            disallowed,
+            hasExecuteCommandNode: grouping.hasExecuteCommandNode,
+            hasHttpRequestNode: grouping.hasHttpRequestNode,
+        });
+    }
+
+    return { allowedTools: allowed, disallowedTools: disallowed };
+}
+
 export async function processToolsForAgent(
     tools: any[],
     options: { verbose: boolean },
     logger: DebugLogger
-): Promise<{ mcpServers: Record<string, any>; disallowedTools: string[] }> {
+): Promise<{
+    mcpServers: Record<string, any>;
+    allowedTools: string[];
+    disallowedTools: string[];
+    resourceDiscoveries: Record<string, any[]>;
+}> {
     const mcpServers: Record<string, any> = {};
-    let toolsCount = 0;
+    const allowedTools = new Set<string>();
+    const disallowedTools = new Set<string>();
+    const resourceDiscoveries: Record<string, any[]> = {};
 
-    if (tools && tools.length > 0) {
-        toolsCount = tools.length;
-        logger.log(`Found ${toolsCount} tools`, tools.map((t: any) => ({
-            name: t.name,
-            description: t.description,
-            source: t.metadata?.sourceNodeName
-        })));
+    const normalizedTools = Array.isArray(tools) ? tools : [];
+    const grouping = groupTools(normalizedTools);
+    const nativePolicy = buildNativeToolPolicy(grouping, logger);
+    nativePolicy.allowedTools.forEach((name) => allowedTools.add(name));
+    nativePolicy.disallowedTools.forEach((name) => disallowedTools.add(name));
 
-        // Group tools by source node to create distinct MCP servers
-        const toolsBySource: Record<string, any[]> = {};
+    if (normalizedTools.length > 0) {
+        logger.log(
+            `Found ${normalizedTools.length} tools`,
+            normalizedTools.map((t: any) => ({
+                name: t.name,
+                description: t.description,
+                source: t.metadata?.sourceNodeName,
+            })),
+        );
 
-        for (const tool of tools) {
-            // Use sourceNodeName as the grouping key, fallback to 'n8n-tools'
-            // For MCP Client tools, this will group them by the client node name
-            const sourceName = tool.metadata?.sourceNodeName || 'n8n-tools';
-            if (!toolsBySource[sourceName]) {
-                toolsBySource[sourceName] = [];
-            }
-            toolsBySource[sourceName].push(tool);
-        }
+        logger.log('Grouped tools by source:', Object.keys(grouping.bySource));
+        logger.log(`HTTP Request node ${grouping.hasHttpRequestNode ? 'FOUND' : 'NOT FOUND'}`);
+        logger.log(`Execute Command node ${grouping.hasExecuteCommandNode ? 'FOUND' : 'NOT FOUND'}`);
 
-        logger.log('Grouped tools by source:', Object.keys(toolsBySource));
+        for (const [sourceName, sourceTools] of Object.entries(grouping.bySource)) {
+            const sdkTools = await adaptN8nToolsToMcp(sourceTools, {
+                verbose: options.verbose,
+                hasHttpRequestNode: grouping.hasHttpRequestNode,
+            }, logger);
 
-        // Check for HTTP Request node globally to determine if we should allow curl/wget
-        const hasHttpRequestNode = tools.some(t => {
-            const nodeType = t.metadata?.nodeType || t.nodeType;
-            return nodeType && (
-                nodeType.toLowerCase().includes('httprequest') ||
-                t.name.toLowerCase().includes('http_request')
-            );
-        });
-
-        logger.log(`Global check: HTTP Request node ${hasHttpRequestNode ? 'FOUND' : 'NOT FOUND'}`);
-
-        // Create an MCP server for each group
-        for (const [sourceName, sourceTools] of Object.entries(toolsBySource)) {
-            const sdkTools = await adaptToMcpTools(sourceTools, options.verbose, logger);
-
-            // Sanitize server name (alphanumeric and underscores only)
-            // e.g. "My MCP Client" -> "My_MCP_Client"
-            const serverName = sourceName.replace(/[^a-zA-Z0-9_]/g, '_');
-
-            // Check if this group contains an "Execute Command" node
-            const isExecuteCommand = sourceTools.some(t => {
-                const nodeType = t.metadata?.nodeType || t.nodeType;
-                return nodeType && (
-                    nodeType.toLowerCase().includes('executecommand') ||
-                    t.name.toLowerCase().includes('execute_command')
-                );
-            });
-
-            // Check if this group contains an "HTTP Request" node
-            const isHttpRequest = sourceTools.some(t => {
-                const nodeType = t.metadata?.nodeType || t.nodeType;
-                return nodeType && (
-                    nodeType.toLowerCase().includes('httprequest') ||
-                    t.name.toLowerCase().includes('http_request')
-                );
-            });
-
-            if (isExecuteCommand) {
-                logger.log(`Found Execute Command node in group ${sourceName}. Renaming tools to 'Bash' to override default.`);
-                sdkTools.forEach(t => {
-                    if (t.name.toLowerCase().includes('execute')) {
-                        t.name = 'Bash';
-                        t.description = 'Execute a bash command on the n8n server. Use this for all shell commands.';
-
-                        // If no HTTP Request node is connected, ban curl/wget
-                        if (!hasHttpRequestNode) {
-                            logger.log('No HTTP Request node connected. Banning curl/wget in Bash tool.');
-                            const originalHandler = t.handler;
-                            t.handler = async (args: any, extra: any) => {
-                                const command = args.command || '';
-                                if (typeof command === 'string') {
-                                    const lowerCmd = command.toLowerCase();
-                                    // Simple check for curl/wget
-                                    if (
-                                        lowerCmd.startsWith('curl ') ||
-                                        lowerCmd.startsWith('wget ') ||
-                                        lowerCmd.includes(' curl ') ||
-                                        lowerCmd.includes(' wget ') ||
-                                        lowerCmd.includes('|curl ') ||
-                                        lowerCmd.includes('|wget ')
-                                    ) {
-                                        throw new Error('Network access via curl/wget is disabled because no HTTP Request node is connected. Please connect an HTTP Request node to enable web fetching.');
-                                    }
-                                }
-                                return originalHandler(args, extra);
-                            };
-                        }
-                    }
-                });
-            }
-
-            if (isHttpRequest) {
-                logger.log(`Found HTTP Request node in group ${sourceName}. Renaming tools to 'WebFetch' to override default.`);
-                sdkTools.forEach(t => {
-                    // Rename the tool to 'WebFetch' so the agent uses it for web requests
-                    if (t.name.toLowerCase().includes('http')) {
-                        t.name = 'WebFetch';
-                        t.description = 'Fetch content from a URL. Use this for all web requests.';
-                    }
-                });
-            }
+            const serverName = sanitizeServerName(sourceName);
+            allowedToolsFromSdk(sdkTools).forEach((name) => allowedTools.add(name));
 
             logger.log(`Creating MCP server '${serverName}' with ${sdkTools.length} tools`);
-
             mcpServers[serverName] = createSdkMcpServer({
                 name: serverName,
                 tools: sdkTools,
             });
+        }
+
+        for (const client of grouping.mcpClients) {
+            const { sdkTools, serverName, exposedToolNames, resources } = await adaptMcpClientTool(
+                client,
+                options.verbose,
+                logger,
+            );
+            if (sdkTools.length === 0) continue;
+
+            exposedToolNames.forEach((name) => allowedTools.add(name));
+            const safeName = sanitizeServerName(serverName);
+            logger.log(`Creating MCP client server '${safeName}' with ${sdkTools.length} tools`);
+            mcpServers[safeName] = createSdkMcpServer({
+                name: safeName,
+                tools: sdkTools,
+            });
+
+            if (resources.length > 0) {
+                resourceDiscoveries[safeName] = resources;
+            }
         }
 
         logger.log('MCP servers created successfully');
@@ -179,8 +258,150 @@ export async function processToolsForAgent(
 
     return {
         mcpServers,
-        disallowedTools: ['Bash', 'WebFetch']
+        allowedTools: Array.from(allowedTools),
+        disallowedTools: Array.from(disallowedTools),
+        resourceDiscoveries,
     };
+}
+
+function isMcpClient(toolItem: any): boolean {
+    return !!(toolItem && typeof toolItem.listTools === 'function' && typeof toolItem.callTool === 'function');
+}
+
+function allowedToolsFromSdk(sdkTools: any[]): string[] {
+    return sdkTools.map((sdkTool) => sdkTool.name).filter(Boolean);
+}
+
+async function adaptN8nToolsToMcp(
+    sourceTools: any[],
+    options: { verbose: boolean; hasHttpRequestNode: boolean },
+    logger: DebugLogger,
+): Promise<any[]> {
+    const sdkTools = await adaptToMcpTools(sourceTools, options.verbose, logger);
+
+    const isExecuteCommand = sourceTools.some((t) => {
+        const nodeType = t.metadata?.nodeType || t.nodeType;
+        return nodeType && (
+            nodeType.toLowerCase().includes('executecommand') ||
+            t.name.toLowerCase().includes('execute_command')
+        );
+    });
+
+    const isHttpRequest = sourceTools.some((t) => {
+        const nodeType = t.metadata?.nodeType || t.nodeType;
+        return nodeType && (
+            nodeType.toLowerCase().includes('httprequest') ||
+            t.name.toLowerCase().includes('http_request')
+        );
+    });
+
+    if (isExecuteCommand) {
+        logger.log('Found Execute Command node in group. Renaming tools to Bash to override default.');
+        sdkTools.forEach(t => {
+            if (t.name.toLowerCase().includes('execute')) {
+                t.name = 'Bash';
+                t.description = 'Execute a bash command on the n8n server. Use this for all shell commands.';
+
+                // If no HTTP Request node is connected, ban curl/wget
+                if (!options.hasHttpRequestNode) {
+                    logger.log('No HTTP Request node connected. Banning curl/wget in Bash tool.');
+                    const originalHandler = t.handler;
+                    t.handler = async (args: any, extra: any) => {
+                        const command = args.command || '';
+                        if (typeof command === 'string') {
+                            const lowerCmd = command.toLowerCase();
+                            // Simple check for curl/wget
+                            if (
+                                lowerCmd.startsWith('curl ') ||
+                                lowerCmd.startsWith('wget ') ||
+                                lowerCmd.includes(' curl ') ||
+                                lowerCmd.includes(' wget ') ||
+                                lowerCmd.includes('|curl ') ||
+                                lowerCmd.includes('|wget ')
+                            ) {
+                                throw new Error('Network access via curl/wget is disabled because no HTTP Request node is connected. Please connect an HTTP Request node to enable web fetching.');
+                            }
+                        }
+                        return originalHandler(args, extra);
+                    };
+                }
+            }
+        });
+    }
+
+    if (isHttpRequest) {
+        logger.log('Found HTTP Request node in group. Renaming tools to WebFetch to override default.');
+        sdkTools.forEach(t => {
+            // Rename the tool to 'WebFetch' so the agent uses it for web requests
+            if (t.name.toLowerCase().includes('http')) {
+                t.name = 'WebFetch';
+                t.description = 'Fetch content from a URL. Use this for all web requests.';
+            }
+        });
+    }
+
+    return sdkTools;
+}
+
+async function adaptMcpClientTool(
+    toolItem: any,
+    verbose: boolean,
+    logger: DebugLogger,
+): Promise<{ sdkTools: any[]; serverName: string; exposedToolNames: string[]; resources: any[] }> {
+    const sdkTools: any[] = [];
+    const exposedToolNames: string[] = [];
+    const serverName = toolItem.metadata?.sourceNodeName || toolItem.name || 'mcp-client';
+    const resources: any[] = [];
+
+    if (typeof toolItem.listTools === 'function') {
+        try {
+            const discovery = await toolItem.listTools();
+            const tools = Array.isArray(discovery?.tools) ? discovery.tools : [];
+
+            for (const discovered of tools) {
+                const name = discovered.name || 'mcp_tool';
+                const description = discovered.description || 'Tool exposed by MCP client';
+                const inputSchema = discovered.inputSchema || discovered.schema || {};
+
+                exposedToolNames.push(name);
+                sdkTools.push(tool(name, description, inputSchema, async (args: any) => {
+                    const result = await toolItem.callTool(name, args);
+                    return {
+                        content: [{ type: 'text', text: typeof result === 'string' ? result : JSON.stringify(result) }],
+                        isError: false,
+                    };
+                }));
+            }
+
+            if (verbose) {
+                logger.log('Discovered MCP client tools', { serverName, exposedToolNames });
+            }
+        } catch (error) {
+            logger.logError('Failed to discover MCP client tools', error);
+        }
+    }
+
+    if (typeof toolItem.listResources === 'function') {
+        try {
+            const resourceResult = await toolItem.listResources();
+            const discoveredResources = Array.isArray(resourceResult?.resources)
+                ? resourceResult.resources
+                : [];
+            resources.push(...discoveredResources);
+
+            if (verbose) {
+                logger.log('Discovered MCP client resources', {
+                    serverName,
+                    resourceCount: discoveredResources.length,
+                    resources: discoveredResources.map((r: any) => r?.name || r?.uri || 'unknown'),
+                });
+            }
+        } catch (error) {
+            logger.logError('Failed to list MCP client resources', error);
+        }
+    }
+
+    return { sdkTools, serverName, exposedToolNames, resources };
 }
 
 function extractSchemaShape(tool: any, logger?: DebugLogger): any {

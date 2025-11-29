@@ -158,6 +158,7 @@ export async function claudeAgentExecute(
             logger.logSection('Tool Processing');
             let mcpServers: Record<string, any> = {};
             let disallowedTools: string[] = ['Bash', 'WebFetch']; // Default disallowed
+            let allowedTools: string[] = [];
 
             try {
                 const rawTools = (await this.getInputConnectionData(NodeConnectionTypes.AiTool, itemIndex)) as any[];
@@ -178,6 +179,7 @@ export async function claudeAgentExecute(
                 const result = await processToolsForAgent(tools, { verbose: !!options.verbose }, logger);
                 mcpServers = result.mcpServers;
                 disallowedTools = result.disallowedTools;
+                allowedTools = result.allowedTools;
 
                 // Count total tools across all servers
                 toolsCount = tools.length;
@@ -228,6 +230,7 @@ export async function claudeAgentExecute(
                 maxTurns: options.maxTurns,
                 permissionMode: 'bypassPermissions',
                 mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+                allowedTools: allowedTools.length > 0 ? allowedTools : undefined,
                 disallowedTools: disallowedTools,
             };
 
