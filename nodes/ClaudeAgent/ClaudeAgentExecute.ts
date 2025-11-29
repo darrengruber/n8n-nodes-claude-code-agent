@@ -22,7 +22,7 @@ import { buildPromptWithMemory, addOutputParserInstructions } from './utils';
 import { processSdkMessages, saveMemoryContextSafe, formatOutputResult } from './utils/outputFormatter';
 
 import { processConnectedTools } from './utils/toolProcessor';
-import { initializeDockerClient, removeVolume } from '../RunContainer/ContainerHelpers';
+import { initializeDockerClient, removeVolume, getWorkspaceVolumeName } from '../RunContainer/ContainerHelpers';
 
 /**
  * Shared execute function for both ClaudeAgent and ClaudeAgentTool
@@ -137,17 +137,14 @@ export async function claudeAgentExecute(
             // Format final result
             const jsonResult = formatOutputResult(output, !!options.verbose, logs);
 
-            // Cleanup workspace volume
-            if ('getExecutionId' in this) {
-                try {
-                    const executionId = this.getExecutionId();
-                    const volumeName = `n8n-vol-${executionId}`;
-                    const docker = initializeDockerClient();
-                    await removeVolume(docker, volumeName);
-                    logger.log(`Cleaned up workspace volume: ${volumeName}`);
-                } catch (cleanupError) {
-                    logger.logError('Failed to cleanup workspace volume', cleanupError);
-                }
+            // Cleanup workspace volume (session-based)
+            try {
+                const volumeName = getWorkspaceVolumeName(this);
+                const docker = initializeDockerClient();
+                await removeVolume(docker, volumeName);
+                logger.log(`Cleaned up workspace volume: ${volumeName}`);
+            } catch (cleanupError) {
+                logger.logError('Failed to cleanup workspace volume', cleanupError);
             }
 
             const executionData: INodeExecutionData = {

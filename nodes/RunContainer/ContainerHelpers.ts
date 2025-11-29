@@ -570,3 +570,78 @@ export async function copyFilesFromContainer(
         throw new Error(`Failed to copy files from container: ${error.message}`);
     }
 }
+
+// Session-based volume management for Claude Agent tool persistence
+
+/**
+ * Generate a session-based volume ID for Claude Agent workspace persistence
+ * Uses a combination of workflow execution context and timestamp
+ *
+ * @param context - n8n execution context
+ * @returns Session-based volume name
+ */
+export function generateSessionVolumeName(context?: any): string {
+    // Try to get workflow ID from context
+    let workflowId = 'unknown-workflow';
+
+    if (context && typeof context.getWorkflowId === 'function') {
+        try {
+            workflowId = context.getWorkflowId();
+        } catch (error) {
+            console.warn('Could not get workflow ID for session volume:', error);
+        }
+    }
+
+    // Use a fixed session identifier based on current date + workflow ID
+    // This ensures all containers in the same Claude Agent session share the same volume
+    const today = new Date();
+    const sessionDate = today.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    // Create a hash from workflow ID and session date for consistency
+    const sessionSeed = `${workflowId}-${sessionDate}`;
+    const sessionHash = Buffer.from(sessionSeed).toString('base64').replace(/[+/=]/g, '').substring(0, 16);
+
+    return `n8n-workspace-${sessionHash}`;
+}
+
+/**
+ * Get the current workspace volume name
+ *优先从环境变量或上下文中获取，否则生成新的
+ *
+ * @param context - n8n execution context
+ * @returns Workspace volume name
+ */
+export function getWorkspaceVolumeName(context?: any): string {
+    // Try to get from environment variable first (for Claude Agent session persistence)
+    if (process.env.N8N_WORKSPACE_VOLUME) {
+        return process.env.N8N_WORKSPACE_VOLUME;
+    }
+
+    // Try to get from context data
+    if (context && context.getNode && typeof context.getNode === 'function') {
+        try {
+            const node = context.getNode();
+            if (node && node.id) {
+                // Use node ID as fallback for session identification
+                return `n8n-workspace-${node.id}`;
+            }
+        } catch (error) {
+            console.warn('Could not get node ID for workspace volume:', error);
+        }
+    }
+
+    // Generate session-based volume name
+    return generateSessionVolumeName(context);
+}
+
+/**
+ * Set workspace volume name in environment for session persistence
+ * Call this once at the beginning of a Claude Agent session
+ *
+ * @param context - n8n execution context
+ */
+export function setWorkspaceVolumeSession(context?: any): void {
+    const volumeName = getWorkspaceVolumeName(context);
+    process.env.N8N_WORKSPACE_VOLUME = volumeName;
+    console.log(`[WorkspaceVolume] Set session volume: ${volumeName}`);
+}

@@ -12,7 +12,9 @@ import {
     executeContainer,
     ContainerExecutionConfig,
     initializeDockerClient,
-    ensureVolume
+    ensureVolume,
+    getWorkspaceVolumeName,
+    setWorkspaceVolumeSession
 } from './ContainerHelpers';
 import { detectDockerSocket } from './utils/socketDetector';
 import {
@@ -73,9 +75,9 @@ export async function executeContainerWithBinary(
             volumes: [],
         };
 
-        // Ensure workspace volume exists and mount it
-        const executionId = context.getExecutionId();
-        const volumeName = `n8n-vol-${executionId}`;
+        // Set up session-based workspace volume for persistence across tool calls
+        setWorkspaceVolumeSession(context);
+        const volumeName = getWorkspaceVolumeName(context);
         const docker = initializeDockerClient(socketPath);
         await ensureVolume(docker, volumeName);
         containerConfig.volumes?.push(`${volumeName}:${params.workspaceMountPath}:rw`);

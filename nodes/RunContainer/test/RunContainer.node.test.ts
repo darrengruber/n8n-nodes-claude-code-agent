@@ -71,6 +71,8 @@ describe('RunContainer > Node Execution', () => {
         // Mock new helper functions
         mockContainerHelpers.initializeDockerClient = jest.fn().mockReturnValue({});
         mockContainerHelpers.ensureVolume = jest.fn().mockResolvedValue(undefined);
+        mockContainerHelpers.getWorkspaceVolumeName = jest.fn().mockReturnValue('n8n-workspace-test-session');
+        mockContainerHelpers.setWorkspaceVolumeSession = jest.fn();
 
         jest.clearAllMocks();
     });
@@ -146,7 +148,7 @@ describe('RunContainer > Node Execution', () => {
                     socketPath: '/var/run/docker.sock',
                     autoRemove: true,
                     pullPolicy: 'missing',
-                    volumes: ['n8n-vol-test-execution-id:/agent/workspace:rw']
+                    volumes: ['n8n-workspace-test-session:/agent/workspace:rw']
                 },
                 expect.any(Function)
             );
@@ -1136,7 +1138,7 @@ describe('RunContainer > Node Execution', () => {
                 1,
                 expect.objectContaining({
                     image: 'alpine:latest',
-                    volumes: expect.arrayContaining([expect.stringMatching(/n8n-vol-.*:\/agent\/workspace:rw/)]),
+                    volumes: expect.arrayContaining([expect.stringMatching(/n8n-workspace-.*:\/agent\/workspace:rw/)]),
                 }),
                 expect.any(Function)
             );
@@ -1149,7 +1151,7 @@ describe('RunContainer > Node Execution', () => {
                     command: expect.stringContaining('cp -r /output/* /output/'), // Default output dir is /output in this test setup
                     volumes: expect.arrayContaining([
                         expect.stringMatching(/\/output:rw$/),
-                        expect.stringMatching(/n8n-vol-.*:\/agent\/workspace:ro/)
+                        expect.stringMatching(/n8n-workspace-.*:\/agent\/workspace:ro/)
                     ]),
                 })
             );
