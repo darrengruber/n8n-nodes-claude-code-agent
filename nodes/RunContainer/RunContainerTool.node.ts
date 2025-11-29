@@ -215,4 +215,111 @@ export class RunContainerTool implements INodeType {
 
         return [returnData];
     }
+
+    // When used as an AI tool, n8n calls supplyData method instead of execute
+    // This method handles binary collection for tool execution
+    async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<any> {
+        console.log(`[RunContainerTool] supplyData called for tool execution with itemIndex: ${itemIndex}`);
+
+        try {
+            // Get Docker socket path with auto-detection logic
+            let socketPath = this.getNodeParameter('socketPath', itemIndex) as string || '/var/run/docker.sock';
+
+            // Auto-detect Docker socket if default path doesn't exist
+            if (socketPath === '/var/run/docker.sock') {
+                const fs = require('fs');
+                const path = require('path');
+                const os = require('os');
+
+                if (!fs.existsSync(socketPath)) {
+                    // Try Colima path on macOS
+                    if (os.platform() === 'darwin') {
+                        const colimaPath = path.join(os.homedir(), '.colima', 'default', 'docker.sock');
+                        if (fs.existsSync(colimaPath)) {
+                            socketPath = colimaPath;
+                        }
+                    }
+                }
+            }
+
+            // Get container parameters from node parameters (tools don't have toolArgs)
+            const image = this.getNodeParameter('image', itemIndex) as string;
+            const entrypoint = this.getNodeParameter('entrypoint', itemIndex, '') as string;
+            const command = this.getNodeParameter('command', itemIndex, '') as string;
+
+            // Handle environment variables from node parameters
+            let envVars: string[] = [];
+            const sendEnv = this.getNodeParameter('sendEnv', itemIndex, false) as boolean;
+
+            if (sendEnv) {
+                const envData = this.getNodeParameter('environmentVariables', itemIndex, []) as Array<{ key: string; value: string }>;
+                if (typeof envData === 'object' && envData !== null) {
+                    for (const env of envData) {
+                        envVars.push(`${env.key}=${env.value}`);
+                    }
+                }
+            }
+
+            // Get other parameters
+            const binaryDataInput = this.getNodeParameter('binaryDataInput', itemIndex, false) as boolean;
+            const binaryDataOutput = this.getNodeParameter('binaryDataOutput', itemIndex, false) as boolean;
+            const outputFilePattern = this.getNodeParameter('outputFilePattern', itemIndex, '*') as string;
+            const workspaceMountPath = this.getNodeParameter('workspaceMountPath', itemIndex, '/agent/workspace') as string;
+            const binaryInputPath = this.getNodeParameter('binaryInputPath', itemIndex, '/agent/workspace/input') as string;
+            const outputDirectory = this.getNodeParameter('outputDirectory', itemIndex, '/agent/workspace/output') as string;
+            const binaryFileMappings = this.getNodeParameter('binaryFileMappings', itemIndex, { mappings: [] }) as { mappings: Array<{ binaryPropertyName: string; containerPath: string }> };
+
+            console.log(`[RunContainerTool] supplyData calling executeContainerWithBinary with:`, {
+                binaryDataInput,
+                binaryDataOutput,
+                outputDirectory,
+                outputFilePattern
+            });
+
+            // Import the executeContainerWithBinary function
+            const { executeContainerWithBinary } = require('./RunContainerLogic');
+
+            const result = await executeContainerWithBinary(this, itemIndex, {
+                image,
+                entrypoint,
+                command,
+                socketPath,
+                envVars,
+                binaryDataInput,
+                binaryDataOutput,
+                binaryFileMappings,
+                outputFilePattern,
+                workspaceMountPath,
+                binaryInputPath,
+                outputDirectory,
+            });
+
+            console.log(`[RunContainerTool] supplyData result has binary:`, !!result.binary);
+            if (result.binary) {
+                console.log(`[RunContainerTool] supplyData binary keys:`, Object.keys(result.binary));
+            }
+
+            return { response: [result] };
+        } catch (error) {
+            console.error(`[RunContainerTool] supplyData error:`, error);
+
+            if (this.continueOnFail()) {
+                return {
+                    response: [{
+                        json: {
+                            error: error.message,
+                        },
+                        pairedItem: {
+                            item: itemIndex,
+                        },
+                    }]
+                };
+            } else {
+                const { NodeOperationError } = require('n8n-workflow');
+                throw new NodeOperationError(this.getNode(), error, {
+                    itemIndex,
+                });
+            }
+        }
+    }
 }
