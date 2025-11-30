@@ -149,6 +149,7 @@ export async function prepareBinaryInputAuto(
 /**
  * Collect binary output files from container execution
  * Scans output directory and prepares binary data for n8n
+ * Automatically excludes temporary tar files (extract-*.tar) created during file copying
  *
  * @param context - n8n execution context
  * @param tempDir - Temporary directory containing output files
@@ -174,6 +175,11 @@ export async function collectBinaryOutput(
             : ['*'];
 
         for (const file of files) {
+            // Skip tar files that are temporary artifacts from file copying
+            if (file.startsWith('extract-') && file.endsWith('.tar')) {
+                continue;
+            }
+
             // Check if file matches any pattern
             const matchesPattern = patterns.some((pattern) => {
                 const regex = new RegExp('^' + pattern.replace(/\*/g, '.*').replace(/\?/g, '.') + '$');

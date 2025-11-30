@@ -243,4 +243,20 @@ export const mainProperties: INodeProperties[] = [
         description: 'Pattern to filter output files. Use * for all files, or specify patterns like *.pdf, result_*.png (comma-separated)',
         placeholder: '*.pdf, result_*.png',
     },
+    {
+        displayName: 'Workspace Mount Path',
+        name: 'workspaceMountPath',
+        type: 'string',
+        default: '/agent/workspace',
+        description: 'Path inside the container where the workspace volume will be mounted. This is used for binary file operations and output handling.',
+        placeholder: '/agent/workspace',
+    },
+    {
+        displayName: 'Binary Input Path',
+        name: 'binaryInputPath',
+        type: 'string',
+        default: '/agent/workspace/input',
+        description: 'Path inside the container where binary input files will be mounted. Used when binary data input is enabled.',
+        placeholder: '/agent/workspace/input',
+    },
 ];

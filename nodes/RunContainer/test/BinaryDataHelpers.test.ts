@@ -332,6 +332,35 @@ describe('RunContainer > BinaryDataHelpers', () => {
             expect(Object.keys(result)).toHaveLength(1);
             expect(result['file.pdf']).toBeDefined();
         });
+
+        it('should skip tar files that are temporary artifacts', async () => {
+            mockFs.access.mockResolvedValue(undefined);
+            mockFs.readdir.mockResolvedValue(['output.pdf', 'extract-1234567890.tar', 'image.png'] as any);
+            
+            mockFs.stat.mockImplementation((filePath: string) => {
+                const fileName = path.basename(filePath);
+                return Promise.resolve({
+                    isFile: () => !fileName.endsWith('.tar'),
+                } as any);
+            });
+
+            mockContext.helpers.prepareBinaryData.mockResolvedValue({
+                data: Buffer.from('mock content'),
+                mimeType: 'application/pdf',
+                fileName: 'output.pdf',
+            });
+
+            const result = await collectBinaryOutput(
+                mockContext as IExecuteFunctions,
+                '/tmp/test',
+            );
+
+            expect(Object.keys(result)).toHaveLength(2);
+            expect(result['output.pdf']).toBeDefined();
+            expect(result['image.png']).toBeDefined();
+            // Tar file should be excluded
+            expect(result['extract-1234567890.tar']).toBeUndefined();
+        });
     });
 
     describe('createOutputDirectory', () => {
