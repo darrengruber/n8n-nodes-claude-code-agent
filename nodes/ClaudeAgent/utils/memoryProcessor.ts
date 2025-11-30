@@ -1,5 +1,5 @@
 import { IExecuteFunctions, ISupplyDataFunctions, NodeConnectionTypes } from 'n8n-workflow';
-import { DebugLogger } from './DebugLogger';
+import { DebugLogger } from './debugLogger';
 
 export async function getMemoryMessages(
     execution: IExecuteFunctions | ISupplyDataFunctions,

@@ -1,0 +1,224 @@
+{
+  "documentation": {
+    "baseUrl": "https://github.com/darrenmcnally/n8n-nodes-claude-agent",
+    "examples": [
+      {
+        "name": "Basic Claude Agent",
+        "description": "Simple example showing how to use Claude Agent with a connected Anthropic model",
+        "workflow": {
+          "nodes": [
+            {
+              "parameters": {
+                "values": {
+                  "string": [
+                    {
+                      "name": "question",
+                      "value": "What are the main benefits of using n8n?"
+                    }
+                  ]
+                }
+              },
+              "name": "Set Question",
+              "type": "n8n-nodes-base.set",
+              "typeVersion": 1,
+              "position": [240, 300]
+            },
+            {
+              "parameters": {
+                "model": "claude-3-sonnet-20240229"
+              },
+              "name": "Anthropic Model",
+              "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+              "typeVersion": 1,
+              "position": [460, 200]
+            },
+            {
+              "parameters": {
+                "text": "={{ $json.question }}",
+                "options": {
+                  "maxTurns": 10,
+                  "verbose": false
+                }
+              },
+              "name": "Claude Agent",
+              "type": "n8n-nodes-claude-agent.claudeAgent",
+              "typeVersion": 2,
+              "position": [680, 300]
+            }
+          ],
+          "connections": {
+            "Set Question": {
+              "main": [
+                [
+                  {
+                    "node": "Claude Agent",
+                    "type": "main",
+                    "index": 0
+                  }
+                ]
+              ]
+            },
+            "Anthropic Model": {
+              "ai_languageModel": [
+                [
+                  {
+                    "node": "Claude Agent",
+                    "type": "ai_languageModel",
+                    "index": 0
+                  }
+                ]
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "Claude Agent with Tools",
+        "description": "Example showing Claude Agent using connected tools for file operations",
+        "workflow": {
+          "nodes": [
+            {
+              "parameters": {
+                "text": "Read the package.json file and tell me what dependencies this project uses",
+                "options": {
+                  "verbose": true,
+                  "maxTurns": 20
+                }
+              },
+              "name": "Claude Agent",
+              "type": "n8n-nodes-claude-agent.claudeAgent",
+              "typeVersion": 2,
+              "position": [680, 300]
+            },
+            {
+              "parameters": {
+                "model": "claude-3-sonnet-20240229"
+              },
+              "name": "Anthropic Model",
+              "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+              "typeVersion": 1,
+              "position": [460, 200]
+            },
+            {
+              "parameters": {},
+              "name": "File Tool",
+              "type": "n8n-nodes-base.fileRead",
+              "typeVersion": 1,
+              "position": [460, 400]
+            }
+          ],
+          "connections": {
+            "Anthropic Model": {
+              "ai_languageModel": [
+                [
+                  {
+                    "node": "Claude Agent",
+                    "type": "ai_languageModel",
+                    "index": 0
+                  }
+                ]
+              ]
+            },
+            "File Tool": {
+              "ai_tool": [
+                [
+                  {
+                    "node": "Claude Agent",
+                    "type": "ai_tool",
+                    "index": 0
+                  }
+                ]
+              ]
+            }
+          }
+        }
+      },
+      {
+        "name": "Claude Agent with Memory",
+        "description": "Example showing Claude Agent with memory for conversational context",
+        "workflow": {
+          "nodes": [
+            {
+              "parameters": {
+                "text": "={{ $json.chatInput }}",
+                "options": {
+                  "systemMessage": "You are a helpful assistant that remembers previous conversations.",
+                  "maxTurns": 30
+                }
+              },
+              "name": "Claude Agent",
+              "type": "n8n-nodes-claude-agent.claudeAgent",
+              "typeVersion": 2,
+              "position": [680, 300]
+            },
+            {
+              "parameters": {
+                "model": "claude-3-sonnet-20240229"
+              },
+              "name": "Anthropic Model",
+              "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+              "typeVersion": 1,
+              "position": [460, 200]
+            },
+            {
+              "parameters": {},
+              "name": "Buffer Memory",
+              "type": "n8n-nodes-langchain.bufferMemory",
+              "typeVersion": 1,
+              "position": [460, 400]
+            }
+          ],
+          "connections": {
+            "Anthropic Model": {
+              "ai_languageModel": [
+                [
+                  {
+                    "node": "Claude Agent",
+                    "type": "ai_languageModel",
+                    "index": 0
+                  }
+                ]
+              ]
+            },
+            "Buffer Memory": {
+              "ai_memory": [
+                [
+                  {
+                    "node": "Claude Agent",
+                    "type": "ai_memory",
+                    "index": 0
+                  }
+                ]
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  "description": "Runs a Claude AI agent using the Claude Code SDK with access to tools, memory, and structured output parsing. The agent can execute complex tasks, use connected tools, maintain conversation context, and follow specific output formats.",
+  "capabilities": [
+    "ai",
+    "tools",
+    "memory",
+    "structured-output",
+    "conversation",
+    "code-execution"
+  ],
+  "keywords": [
+    "claude",
+    "anthropic",
+    "ai",
+    "agent",
+    "llm",
+    "automation",
+    "tools",
+    "memory"
+  ],
+  "categories": [
+    "AI",
+    "Automation",
+    "Development"
+  ],
+  "subcategory": "Artificial Intelligence"
+}

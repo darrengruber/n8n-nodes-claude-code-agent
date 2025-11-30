@@ -12,7 +12,7 @@ export const mainProperties: INodeProperties[] = [
         displayName: 'Tool Description',
         name: 'toolDescription',
         type: 'string',
-        default: 'Runs a Docker container in two modes: (1) Simple mode: Execute shell commands directly using bash - just provide the image and command. (2) Advanced mode: Full control over entrypoint and command parameters. Automatically executes the container and returns stdout, stderr, and exit code. Use this tool whenever you need to run code, execute commands, or test something in an isolated Docker environment. For simple mode, provide the image name (e.g., "alpine:latest", "python:3.11") and the shell command to execute. For advanced mode, also specify entrypoint if needed.',
+        default: 'Runs a Docker container with the specified image, entrypoint, and command. Automatically executes the container and returns stdout, stderr, and exit code. Use this tool whenever you need to run code, execute commands, or test something in an isolated Docker environment. Provide the image name (e.g., "alpine:latest", "python:3.11"), optionally an entrypoint (e.g., "/bin/sh", "python"), and the command arguments to pass to it.',
         description: 'Explain to LLM what this tool does and when to use it',
         typeOptions: {
             rows: 3,
@@ -33,44 +33,20 @@ export const mainProperties: INodeProperties[] = [
         description: 'The Docker image to run. Examples: alpine:latest for minimal shell, python:3.11 for Python scripts, node:20 for JavaScript. The image will be automatically pulled if it does not exist locally.',
     },
     {
-        displayName: 'Execution Mode',
-        name: 'executionMode',
-        type: 'options',
-        default: 'simple',
-        description: 'Choose between simple shell execution or advanced entrypoint/command control. Simple mode automatically uses bash to execute your command safely.',
-        options: [
-            {
-                name: 'Simple (Shell Execute)',
-                value: 'simple',
-                description: 'Execute shell commands directly using bash. Easiest option for most users.',
-            },
-            {
-                name: 'Advanced (Direct Control)',
-                value: 'advanced',
-                description: 'Full control over entrypoint and command parameters. For power users.',
-            },
-        ],
-    },
-    {
         displayName: 'Entrypoint',
         name: 'entrypoint',
         type: 'string',
         default: '',
         placeholder: 'e.g., /bin/sh, python, node',
         description: 'Override the default entrypoint of the image. Leave empty to use the image default. This is the executable that will be run.',
-        displayOptions: {
-            show: {
-                executionMode: ['advanced'],
-            },
-        },
     },
     {
         displayName: 'Command',
         name: 'command',
         type: 'string',
         default: '',
-        placeholder: 'e.g., echo "Hello World", ls -la, python script.py',
-        description: 'The shell command to execute. In simple mode, this runs as a bash command. In advanced mode, these are arguments passed to the entrypoint.',
+        placeholder: 'e.g., -c "echo Hello World", /app/script.py, --version',
+        description: 'The command arguments to pass to the entrypoint. This is what gets executed after the entrypoint.',
     },
     {
         displayName: 'Send Environment Variables',

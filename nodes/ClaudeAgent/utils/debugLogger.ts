@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { formatTurnsFromData } from './ClaudeFormatTurns';
+import { formatTurnsFromData } from './turnFormatter';
 
 export class DebugLogger {
     private logDir: string;
@@ -103,6 +103,12 @@ export class DebugLogger {
         this.log(`${separator}`);
         this.log(`${this.prefix}${title}`);
         this.log(`${separator}`);
+    }
+
+    logWarning(message: string, data?: any) {
+        if (!this.enabled) return;
+
+        this.log(`⚠️  WARNING: ${message}`, data);
     }
 
     logError(message: string, error: any) {

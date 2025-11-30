@@ -6,7 +6,7 @@ import {
     NodeConnectionTypes,
     ISupplyDataFunctions,
 } from 'n8n-workflow';
-import { claudeAgentExecute } from './ClaudeAgentExecute';
+import { claudeAgentExecute } from '../ClaudeAgentExecute';
 
 export class ClaudeAgentTool implements INodeType {
     description: INodeTypeDescription = {
