@@ -31,11 +31,18 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/$1',
     '^~/(.*)$': '<rootDir>/$1'
   },
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node', 'mjs'],
   transform: {
-    '^.+\\.tsx?$': 'ts-jest'
+    '^.+\\.tsx?$': ['ts-jest', {
+      useESM: true
+    }]
   },
   setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
+  globals: {},
+  verbose: true,
+  errorOnDeprecated: true,
+  bail: false
+};],
   globals: {},
   verbose: true,
   errorOnDeprecated: true,

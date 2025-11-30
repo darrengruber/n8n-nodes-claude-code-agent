@@ -6,6 +6,7 @@ import {
 } from 'n8n-workflow';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { DebugLogger } from './utils/debugLogger';
+import { BinaryArtifact } from './interfaces';
 import { ClaudeAgentOptions, SdkConfiguration, ClaudeAgentResultData } from './interfaces';
 import {
     getConnectedModel,
@@ -84,7 +85,7 @@ export async function claudeAgentExecute(
             finalPrompt = addOutputParserInstructions(finalPrompt, outputParser, logger);
 
             // Initialize array to collect binary artifacts from tools
-            const binaryArtifacts: any[] = [];
+            const binaryArtifacts: BinaryArtifact[] = [];
 
             // Process connected tools with binary input processing
             const { mcpServers, disallowedTools, toolsCount, binaryInputResult: processedBinaryResult } = await processConnectedTools(

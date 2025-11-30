@@ -45,6 +45,15 @@ const FILE_TYPE_mappings: Record<string, FileTypeInfo> = {
 };
 
 /**
+ * Calculate file size from base64 data efficiently
+ */
+export function calculateFileSizeFromBase64(base64Data: string): number {
+    // Approximate conversion: base64 is ~33% larger than original
+    // This avoids creating a Buffer just for size calculation
+    return Math.round(base64Data.length * 0.75);
+}
+
+/**
  * Get file category from file extension or MIME type
  */
 export function getFileCategory(fileName: string, mimeType: string): 'image' | 'document' | 'data' | 'archive' | 'code' | 'other' {
@@ -138,7 +147,7 @@ export async function processBinaryInput(
         try {
             const fileName = (binaryData as any).fileName || key;
             const mimeType = (binaryData as any).mimeType || 'application/octet-stream';
-            const fileSize = Buffer.from((binaryData as any).data, 'base64').length;
+            const fileSize = Math.round((binaryData as any).data.length * 0.75); // Approximate base64 to bytes conversion
 
             // Validate file size
             if (fileSize > maxSizeBytes) {

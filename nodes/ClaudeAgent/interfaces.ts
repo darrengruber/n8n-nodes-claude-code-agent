@@ -97,3 +97,13 @@ export interface FileTypeInfo {
     mimeTypes: string[];
     category: 'image' | 'document' | 'data' | 'archive' | 'code' | 'other';
 }
+
+export interface BinaryArtifact {
+    readonly toolName: string;
+    readonly fileName: string;
+    readonly mimeType: string;
+    readonly data: string; // base64 encoded
+    readonly fileSize?: number;
+    readonly description: string;
+    readonly timestamp?: Date;
+}

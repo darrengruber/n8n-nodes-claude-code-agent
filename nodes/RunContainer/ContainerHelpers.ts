@@ -295,7 +295,7 @@ export async function getContainerLogs(container: Docker.Container): Promise<Buf
         const logsBuffer = await container.logs({
             stdout: true,
             stderr: true,
-            timestamps: false // Don//t include timestamps to match original behavior
+            timestamps: false // Don't include timestamps to match original behavior
         });
 
         // dockerode v3+ returns a buffer directly in some cases

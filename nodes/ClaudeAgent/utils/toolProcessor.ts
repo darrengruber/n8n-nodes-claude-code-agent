@@ -4,6 +4,7 @@ import {
     NodeConnectionTypes,
 } from 'n8n-workflow';
 import { DebugLogger } from './debugLogger';
+import { BinaryArtifact } from '../interfaces';
 import { processToolsForAgent } from './mcpAdapter';
 import { ToolProcessingResult, ClaudeAgentOptions } from '../interfaces';
 import { processBinaryInput, cleanupBinaryInput } from './binaryInputProcessor';
@@ -16,7 +17,7 @@ export async function processConnectedTools(
     itemIndex: number,
     verbose: boolean,
     logger: DebugLogger,
-    binaryArtifacts?: any[],
+    binaryArtifacts?: BinaryArtifact[],
     options?: ClaudeAgentOptions
 ): Promise<ToolProcessingResult & { toolsCount: number; binaryInputResult?: any }> {
     logger.logSection('Tool Processing');
